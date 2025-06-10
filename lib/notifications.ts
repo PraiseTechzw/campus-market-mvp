@@ -1,9 +1,9 @@
-import { supabase } from './supabase';
+import { CACHE_KEYS, storage } from '@/lib/storage';
 import { Notification } from '@/types';
-import { storage, CACHE_KEYS } from '@/lib/storage';
 import * as Device from 'expo-device';
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
+import { supabase } from './supabase';
 
 // Configure notifications for handling
 Notifications.setNotificationHandler({
@@ -75,18 +75,16 @@ export class NotificationService {
       const cachedCount = await storage.getItem(CACHE_KEYS.UNREAD_NOTIFICATION_COUNT);
       
       // Fetch from server
-      const { data, error, count } = await supabase
-        .from('notifications')
-        .select('id', { count: 'exact' })
-        .eq('user_id', userId)
-        .eq('is_read', false);
+      const { data, error } = await supabase.rpc('get_unread_notification_count', {
+        user_id: userId
+      });
 
       if (error) throw error;
       
       // Update cache
-      await storage.setItem(CACHE_KEYS.UNREAD_NOTIFICATION_COUNT, count || 0);
+      await storage.setItem(CACHE_KEYS.UNREAD_NOTIFICATION_COUNT, data || 0);
       
-      return { count: count || 0 };
+      return { count: data || 0 };
     } catch (error: any) {
       console.error('Error getting unread notification count:', error);
       // Return cached count if available, otherwise 0
@@ -161,17 +159,40 @@ export class NotificationService {
   // Save push token to database
   static async savePushToken(userId: string, token: string): Promise<boolean> {
     try {
-      const { error } = await supabase
+      // First check if token exists for this user
+      const { data: existingToken } = await supabase
         .from('user_push_tokens')
-        .upsert({
-          user_id: userId,
-          token,
-          device_type: Platform.OS,
-          is_active: true,
-          last_used: new Date().toISOString()
-        });
+        .select('id')
+        .eq('user_id', userId)
+        .eq('token', token)
+        .single();
 
-      if (error) throw error;
+      if (existingToken) {
+        // Update existing token
+        const { error } = await supabase
+          .from('user_push_tokens')
+          .update({
+            is_active: true,
+            last_used: new Date().toISOString()
+          })
+          .eq('id', existingToken.id);
+
+        if (error) throw error;
+      } else {
+        // Insert new token
+        const { error } = await supabase
+          .from('user_push_tokens')
+          .insert({
+            user_id: userId,
+            token,
+            device_type: Platform.OS,
+            is_active: true,
+            last_used: new Date().toISOString()
+          });
+
+        if (error) throw error;
+      }
+
       return true;
     } catch (error) {
       console.error('Error saving push token:', error);

@@ -42,14 +42,13 @@ export default function TabLayout() {
         setUnreadMessages(messageCount || 0);
       }
 
-      const { data: notificationCount, error: notificationError } = await supabase
-        .from('notifications')
-        .select('id', { count: 'exact' })
-        .eq('user_id', user?.id || '')
-        .eq('is_read', false);
+      const { data: notificationCount, error: notificationError } = await supabase.rpc(
+        'get_unread_notification_count',
+        { user_id: user?.id || '' }
+      );
       
       if (!notificationError) {
-        setUnreadNotifications(notificationCount?.length || 0);
+        setUnreadNotifications(notificationCount || 0);
       }
     } catch (error) {
       console.error('Error fetching unread counts:', error);

@@ -864,7 +864,7 @@ BEGIN
   SELECT COUNT(*)
   INTO count_result
   FROM notifications
-  WHERE user_id = user_id AND is_read = false;
+  WHERE notifications.user_id = user_id AND is_read = false;
   
   RETURN count_result;
 END;

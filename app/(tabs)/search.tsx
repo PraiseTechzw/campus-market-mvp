@@ -1,21 +1,20 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput } from 'react-native';
-import { useRouter, useLocalSearchParams } from 'expo-router';
-import { MotiView } from 'moti';
-import { useTheme } from '@/contexts/ThemeContext';
 import { Card } from '@/components/ui/Card';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
+import { useTheme } from '@/contexts/ThemeContext';
 import { supabase } from '@/lib/supabase';
-import { Product, CATEGORIES } from '@/types';
+import { CATEGORIES, Product } from '@/types';
 import { Ionicons } from '@expo/vector-icons';
-import { Image } from 'react-native';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { MotiView } from 'moti';
+import React, { useEffect, useState } from 'react';
+import { FlatList, Image, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
 export default function SearchScreen() {
   const { colors } = useTheme();
   const router = useRouter();
   const { query, category } = useLocalSearchParams<{ query?: string; category?: string }>();
   
-  const [searchQuery, setSearchQuery] = useState(query || '');
+  const [searchQuery, setSearchQuery] = useState<string>(query || '');
   const [products, setProducts] = useState<Product[]>([]);
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
@@ -76,8 +75,8 @@ export default function SearchScreen() {
     try {
       const { data, error } = await supabase
         .rpc('search_products', {
-          search_query: searchQuery.length > 2 ? searchQuery : null,
-          category_filter: selectedCategory !== 'All' ? selectedCategory : null,
+          search_query: searchQuery.length > 2 ? searchQuery : undefined,
+          category_filter: selectedCategory !== 'All' ? selectedCategory : undefined,
           limit_count: 50
         });
 
@@ -96,7 +95,26 @@ export default function SearchScreen() {
           .eq('is_sold', false);
 
         if (sellersError) throw sellersError;
-        setProducts(productsWithSellers || []);
+        
+        // Convert the data to match the Product type
+        const typedProducts = (productsWithSellers || []).map(product => ({
+          ...product,
+          condition: product.condition as 'new' | 'used',
+          images: product.images || [],
+          specifications: product.specifications as Record<string, any> || undefined,
+          location: product.location || undefined,
+          tags: product.tags || [],
+          seller: {
+            ...product.seller,
+            rating_count: product.seller.total_reviews || 0,
+            university: product.seller.university || undefined,
+            avatar_url: product.seller.avatar_url || undefined,
+            phone: product.seller.phone || undefined,
+            rating: product.seller.rating || 0
+          }
+        }));
+        
+        setProducts(typedProducts);
       } else {
         setProducts([]);
       }
@@ -124,13 +142,18 @@ export default function SearchScreen() {
     }
   };
 
-  const renderSuggestion = ({ item }: { item: string }) => (
+  const renderSuggestion = (search: string, type: 'recent' | 'popular', onPress: (s: string) => void) => (
     <TouchableOpacity
-      style={[styles.suggestionItem, { borderBottomColor: colors.border }]}
-      onPress={() => handleSuggestionPress(item)}
+      key={search}
+      onPress={() => onPress(search)}
+      className="flex-row items-center p-3 border-b border-gray-100"
     >
-      <Ionicons name="search" size={16} color={colors.textTertiary} />
-      <Text style={[styles.suggestionText, { color: colors.text }]}>{item}</Text>
+      <Ionicons
+        name={type === 'recent' ? 'time-outline' : 'trending-up-outline'}
+        size={20}
+        color={colors.textTertiary}
+      />
+      <Text className="ml-3" style={{ color: colors.text }}>{search}</Text>
     </TouchableOpacity>
   );
 
@@ -159,30 +182,73 @@ export default function SearchScreen() {
             )}
             
             <View style={styles.productDetails}>
-              <Text style={[styles.productTitle, { color: colors.text }]} numberOfLines={2}>
-                {item.title}
-              </Text>
+              <View style={styles.productHeader}>
+                <Text style={[styles.productTitle, { color: colors.text }]} numberOfLines={2}>
+                  {item.title}
+                </Text>
+                <View style={[styles.conditionBadge, { backgroundColor: item.condition === 'new' ? colors.success : colors.warning }]}>
+                  <Text style={styles.conditionText}>{item.condition}</Text>
+                </View>
+              </View>
+
               <Text style={[styles.productDescription, { color: colors.textSecondary }]} numberOfLines={2}>
                 {item.description}
               </Text>
+
               <View style={styles.productMeta}>
                 <Text style={[styles.productPrice, { color: colors.primary }]}>
                   ${item.price.toFixed(2)}
                 </Text>
-                <Text style={[styles.productCategory, { color: colors.textTertiary }]}>
-                  {item.category}
-                </Text>
-              </View>
-              <View style={styles.sellerInfo}>
-                <Text style={[styles.sellerName, { color: colors.textSecondary }]}>
-                  by {item.seller.name}
-                </Text>
-                {item.seller.is_verified && (
-                  <View style={[styles.verifiedBadge, { backgroundColor: colors.primary }]}>
-                    <Ionicons name="checkmark" size={10} color="#FFFFFF" />
+                <View style={styles.metaInfo}>
+                  <View style={styles.metaItem}>
+                    <Ionicons name="eye-outline" size={14} color={colors.textTertiary} />
+                    <Text style={[styles.metaText, { color: colors.textTertiary }]}>
+                      {item.view_count}
+                    </Text>
                   </View>
+                  {item.location && (
+                    <View style={styles.metaItem}>
+                      <Ionicons name="location-outline" size={14} color={colors.textTertiary} />
+                      <Text style={[styles.metaText, { color: colors.textTertiary }]}>
+                        {item.location}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+              </View>
+
+              <View style={styles.sellerInfo}>
+                <View style={styles.sellerLeft}>
+                  <Text style={[styles.sellerName, { color: colors.textSecondary }]}>
+                    by {item.seller.name}
+                  </Text>
+                  {item.seller.is_verified && (
+                    <View style={[styles.verifiedBadge, { backgroundColor: colors.primary }]}>
+                      <Ionicons name="checkmark" size={10} color="#FFFFFF" />
+                    </View>
+                  )}
+                </View>
+                {item.seller.university && (
+                  <Text style={[styles.universityText, { color: colors.textTertiary }]}>
+                    {item.seller.university}
+                  </Text>
                 )}
               </View>
+
+              {item.tags && item.tags.length > 0 && (
+                <View style={styles.tagsContainer}>
+                  {item.tags.slice(0, 3).map((tag, index) => (
+                    <View key={index} style={[styles.tag, { backgroundColor: colors.surface }]}>
+                      <Text style={[styles.tagText, { color: colors.textSecondary }]}>{tag}</Text>
+                    </View>
+                  ))}
+                  {item.tags.length > 3 && (
+                    <Text style={[styles.moreTags, { color: colors.textTertiary }]}>
+                      +{item.tags.length - 3} more
+                    </Text>
+                  )}
+                </View>
+              )}
             </View>
           </View>
         </Card>
@@ -281,8 +347,8 @@ export default function SearchScreen() {
           <View style={[styles.suggestionsContainer, { backgroundColor: colors.surface }]}>
             <FlatList
               data={suggestions}
-              renderItem={renderSuggestion}
-              keyExtractor={(item, index) => `suggestion-${index}`}
+              renderItem={({ item }) => renderSuggestion(item, 'popular', handleSuggestionPress)}
+              keyExtractor={(item) => item || ''}
               style={styles.suggestionsList}
             />
           </View>
@@ -293,18 +359,14 @@ export default function SearchScreen() {
             <View style={styles.searchSection}>
               <Text style={[styles.sectionTitle, { color: colors.text }]}>Recent Searches</Text>
               <View style={styles.searchChips}>
-                {recentSearches.map((search, index) => 
-                  renderSearchChip(search, () => setSearchQuery(search))
-                )}
+                {recentSearches.map((search) => renderSuggestion(search, 'recent', handleSuggestionPress))}
               </View>
             </View>
 
             <View style={styles.searchSection}>
               <Text style={[styles.sectionTitle, { color: colors.text }]}>Popular Searches</Text>
               <View style={styles.searchChips}>
-                {popularSearches.map((search, index) => 
-                  renderSearchChip(search, () => setSearchQuery(search))
-                )}
+                {popularSearches.map((search) => renderSuggestion(search, 'popular', handleSuggestionPress))}
               </View>
             </View>
 
@@ -434,17 +496,6 @@ const styles = StyleSheet.create({
   suggestionsList: {
     maxHeight: 200,
   },
-  suggestionItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    gap: 12,
-  },
-  suggestionText: {
-    fontSize: 14,
-  },
   emptySearchContainer: {
     flex: 1,
     padding: 20,
@@ -502,18 +553,27 @@ const styles = StyleSheet.create({
   },
   productItem: {
     marginBottom: 16,
+    borderRadius: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+    backgroundColor: '#fff',
+    overflow: 'hidden',
   },
   productContent: {
     flexDirection: 'row',
+    padding: 12,
   },
   productImage: {
-    width: 80,
-    height: 80,
+    width: 100,
+    height: 100,
     borderRadius: 8,
   },
   productImagePlaceholder: {
-    width: 80,
-    height: 80,
+    width: 100,
+    height: 100,
     borderRadius: 8,
     justifyContent: 'center',
     alignItems: 'center',
@@ -522,29 +582,64 @@ const styles = StyleSheet.create({
     flex: 1,
     marginLeft: 12,
   },
+  productHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 4,
+  },
   productTitle: {
     fontSize: 16,
     fontWeight: '600',
-    marginBottom: 4,
+    flex: 1,
+    marginRight: 8,
+  },
+  conditionBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
+  },
+  conditionText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '500',
+    textTransform: 'capitalize',
   },
   productDescription: {
     fontSize: 14,
     marginBottom: 8,
+    lineHeight: 18,
   },
   productMeta: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 4,
+    marginBottom: 8,
   },
   productPrice: {
     fontSize: 18,
     fontWeight: '700',
   },
-  productCategory: {
+  metaInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  metaItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  metaText: {
     fontSize: 12,
   },
   sellerInfo: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  sellerLeft: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
@@ -558,5 +653,25 @@ const styles = StyleSheet.create({
     borderRadius: 7,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  universityText: {
+    fontSize: 12,
+  },
+  tagsContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: 4,
+  },
+  tag: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  tagText: {
+    fontSize: 12,
+  },
+  moreTags: {
+    fontSize: 12,
   },
 });

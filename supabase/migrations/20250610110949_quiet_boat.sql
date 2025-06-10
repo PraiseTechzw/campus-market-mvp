@@ -116,3 +116,25 @@ CREATE POLICY "Anonymous users can insert profiles"
 -- Ensure proper permissions for all functions
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO authenticated;
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO anon;
+
+-- Function to get user verification status
+CREATE OR REPLACE FUNCTION get_user_verification_status(p_user_id uuid)
+RETURNS TABLE (
+  is_verified boolean,
+  profile_complete boolean
+) AS $$
+BEGIN
+  RETURN QUERY
+  SELECT 
+    u.is_verified,
+    CASE 
+      WHEN u.name IS NOT NULL AND u.email IS NOT NULL THEN true
+      ELSE false
+    END as profile_complete
+  FROM users u
+  WHERE u.id = p_user_id;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Grant execute permission on the function
+GRANT EXECUTE ON FUNCTION get_user_verification_status(uuid) TO authenticated;

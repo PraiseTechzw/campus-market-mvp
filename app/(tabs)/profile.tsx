@@ -46,13 +46,9 @@ export default function ProfileScreen() {
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [verificationStatus, setVerificationStatus] = useState<{
     is_verified: boolean;
-    verification_status: string;
-    email_verified: boolean;
     profile_complete: boolean;
   }>({
     is_verified: false,
-    verification_status: 'pending',
-    email_verified: false,
     profile_complete: false,
   });
 
@@ -67,12 +63,14 @@ export default function ProfileScreen() {
   const fetchVerificationStatus = async () => {
     try {
       const { data, error } = await supabase.rpc('get_user_verification_status', {
-        user_id: user?.id
+        p_user_id: user?.id
       });
-      
       if (error) throw error;
-      if (data) {
-        setVerificationStatus(data);
+      if (data && Array.isArray(data) && data.length > 0) {
+        setVerificationStatus({
+          is_verified: data[0].is_verified,
+          profile_complete: data[0].profile_complete
+        });
       }
     } catch (error) {
       console.error('Error fetching verification status:', error);
@@ -128,7 +126,7 @@ export default function ProfileScreen() {
       // Fetch unread message count
       const { data: unreadMessages, error: messagesError } = await supabase.rpc(
         'get_unread_message_count',
-        { user_id: user.id }
+        { p_user_id: user.id }
       );
       
       if (messagesError) throw messagesError;
@@ -236,16 +234,8 @@ export default function ProfileScreen() {
       return 'Verified student';
     }
     
-    if (!verificationStatus.email_verified) {
-      return 'Email verification required';
-    }
-    
-    if (verificationStatus.verification_status === 'pending') {
+    if (!verificationStatus.is_verified) {
       return 'Verification pending';
-    }
-    
-    if (verificationStatus.verification_status === 'rejected') {
-      return 'Verification rejected';
     }
     
     return 'Verify your student status';
@@ -256,16 +246,8 @@ export default function ProfileScreen() {
       return 'checkmark-circle';
     }
     
-    if (!verificationStatus.email_verified) {
-      return 'mail';
-    }
-    
-    if (verificationStatus.verification_status === 'pending') {
+    if (!verificationStatus.is_verified) {
       return 'time';
-    }
-    
-    if (verificationStatus.verification_status === 'rejected') {
-      return 'close-circle';
     }
     
     return 'shield-checkmark';
@@ -276,16 +258,8 @@ export default function ProfileScreen() {
       return colors.success;
     }
     
-    if (!verificationStatus.email_verified) {
-      return colors.error;
-    }
-    
-    if (verificationStatus.verification_status === 'pending') {
+    if (!verificationStatus.is_verified) {
       return colors.warning;
-    }
-    
-    if (verificationStatus.verification_status === 'rejected') {
-      return colors.error;
     }
     
     return colors.warning;
@@ -507,19 +481,19 @@ export default function ProfileScreen() {
                   </View>
                   <View style={styles.verificationInfo}>
                     <Text style={[styles.verificationTitle, { color: colors.text }]}>
-                      {!verificationStatus.email_verified 
-                        ? 'Email Verification Required' 
+                      {!verificationStatus.is_verified 
+                        ? 'Verification Required' 
                         : 'Complete Your Verification'}
                     </Text>
                     <Text style={[styles.verificationText, { color: colors.textSecondary }]}>
-                      {!verificationStatus.email_verified 
-                        ? 'Please verify your email to access all features' 
+                      {!verificationStatus.is_verified 
+                        ? 'Please verify your student status to access all features' 
                         : 'Verify your student status to build trust with other users'}
                     </Text>
                   </View>
                 </View>
                 <Button
-                  title={!verificationStatus.email_verified ? "Verify Email" : "Complete Verification"}
+                  title={!verificationStatus.is_verified ? "Verify Student Status" : "Complete Verification"}
                   onPress={() => router.push('/profile/verification')}
                   style={[styles.verificationButton, { backgroundColor: getVerificationColor() }]}
                 />
@@ -631,7 +605,7 @@ export default function ProfileScreen() {
                     </View>
                     <View style={styles.menuItemRight}>
                       {item.rightComponent || (
-                        <Ionicons name="chevron-forward\" size={20} color={colors.textTertiary} />
+                        <Ionicons name="chevron-forward" size={20} color={colors.textTertiary} />
                       )}
                     </View>
                   </TouchableOpacity>
