@@ -1,17 +1,15 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert } from 'react-native';
-import { useRouter } from 'expo-router';
-import * as ImagePicker from 'expo-image-picker';
-import { MotiView } from 'moti';
-import { useAuth } from '@/contexts/AuthContext';
-import { useTheme } from '@/contexts/ThemeContext';
-import { Input } from '@/components/ui/Input';
-import { PhoneInput } from '@/components/ui/PhoneInput';
-import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Country } from '@/components/ui/CountryPicker';
+import { Input } from '@/components/ui/Input';
+import { PhoneInput } from '@/components/ui/PhoneInput';
+import { useAuth } from '@/contexts/AuthContext';
+import { useTheme } from '@/contexts/ThemeContext';
 import { Ionicons } from '@expo/vector-icons';
-import { Image } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
+import { useRouter } from 'expo-router';
+import { MotiView } from 'moti';
+import React, { useState } from 'react';
+import { Alert, Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Toast from 'react-native-toast-message';
 
 export default function EditProfileScreen() {
@@ -54,7 +52,7 @@ export default function EditProfileScreen() {
     }
 
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ["images"],
       allowsEditing: true,
       aspect: [1, 1],
       quality: 0.8,
@@ -232,7 +230,7 @@ export default function EditProfileScreen() {
                 value={formData.name}
                 onChangeText={(text) => setFormData({ ...formData, name: text })}
                 error={errors.name}
-                leftIcon={<Ionicons name="person\" size={20} color={colors.textTertiary} />}
+                leftIcon={<Ionicons name="person" size={20} color={colors.textTertiary} />}
               />
 
               <Input
@@ -240,7 +238,7 @@ export default function EditProfileScreen() {
                 placeholder="Email address"
                 value={user.email}
                 editable={false}
-                leftIcon={<Ionicons name="mail\" size={20} color={colors.textTertiary} />}
+                leftIcon={<Ionicons name="mail" size={20} color={colors.textTertiary} />}
                 style={{ opacity: 0.6 }}
               />
 
@@ -257,7 +255,7 @@ export default function EditProfileScreen() {
                 placeholder="Enter your university"
                 value={formData.university}
                 onChangeText={(text) => setFormData({ ...formData, university: text })}
-                leftIcon={<Ionicons name="school\" size={20} color={colors.textTertiary} />}
+                leftIcon={<Ionicons name="school" size={20} color={colors.textTertiary} />}
               />
 
               <Input
@@ -267,7 +265,7 @@ export default function EditProfileScreen() {
                 onChangeText={(text) => setFormData({ ...formData, bio: text })}
                 multiline
                 numberOfLines={3}
-                leftIcon={<Ionicons name="document-text\" size={20} color={colors.textTertiary} />}
+                leftIcon={<Ionicons name="document-text" size={20} color={colors.textTertiary} />}
                 style={{ height: 80, textAlignVertical: 'top' }}
               />
             </View>
