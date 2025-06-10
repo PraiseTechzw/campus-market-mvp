@@ -1,17 +1,16 @@
-import { useEffect } from 'react';
-import { Stack } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
-import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { useFrameworkReady } from '@/hooks/useFrameworkReady';
-import { ThemeProvider } from '@/contexts/ThemeContext';
-import { AuthProvider } from '@/contexts/AuthContext';
-import { NotificationProvider } from '@/contexts/NotificationContext';
-import { MessagingProvider } from '@/contexts/MessagingContext';
-import { useTheme } from '@/contexts/ThemeContext';
-import Toast from 'react-native-toast-message';
 import { toastConfig } from '@/components/ui/Toast';
-import 'react-native-url-polyfill/auto';
+import { AuthProvider } from '@/contexts/AuthContext';
+import { MessagingProvider } from '@/contexts/MessagingContext';
+import { NotificationProvider } from '@/contexts/NotificationContext';
+import { ThemeProvider, useTheme } from '@/contexts/ThemeContext';
+import { useFrameworkReady } from '@/hooks/useFrameworkReady';
+import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
+import { StatusBar } from 'expo-status-bar';
+import React, { useEffect } from 'react';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import Toast from 'react-native-toast-message';
+import 'react-native-url-polyfill/auto';
 
 // Prevent splash screen from auto-hiding
 SplashScreen.preventAutoHideAsync();

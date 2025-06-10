@@ -1,17 +1,17 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image } from 'react-native';
-import { useRouter } from 'expo-router';
-import * as ImagePicker from 'expo-image-picker';
-import { MotiView } from 'moti';
-import { LinearGradient } from 'expo-linear-gradient';
-import { useAuth } from '@/contexts/AuthContext';
-import { useTheme } from '@/contexts/ThemeContext';
-import { Input } from '@/components/ui/Input';
-import { PhoneInput } from '@/components/ui/PhoneInput';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Country } from '@/components/ui/CountryPicker';
+import { Input } from '@/components/ui/Input';
+import { PhoneInput } from '@/components/ui/PhoneInput';
+import { useAuth } from '@/contexts/AuthContext';
+import { useTheme } from '@/contexts/ThemeContext';
 import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useRouter } from 'expo-router';
+import { MotiView } from 'moti';
+import React, { useState } from 'react';
+import { Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Toast from 'react-native-toast-message';
 
 export default function ProfileSetupScreen() {
@@ -41,7 +41,7 @@ export default function ProfileSetupScreen() {
     }
 
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ["images"],
       allowsEditing: true,
       aspect: [1, 1],
       quality: 0.8,
@@ -207,7 +207,7 @@ export default function ProfileSetupScreen() {
                 placeholder="Enter your full name"
                 value={formData.name}
                 onChangeText={(text) => setFormData({ ...formData, name: text })}
-                leftIcon={<Ionicons name="person\" size={20} color={colors.textTertiary} />}
+                leftIcon={<Ionicons name="person" size={20} color={colors.textTertiary} />}
               />
 
               <PhoneInput
@@ -225,7 +225,7 @@ export default function ProfileSetupScreen() {
                 onChangeText={(text) => setFormData({ ...formData, bio: text })}
                 multiline
                 numberOfLines={3}
-                leftIcon={<Ionicons name="document-text\" size={20} color={colors.textTertiary} />}
+                leftIcon={<Ionicons name="document-text" size={20} color={colors.textTertiary} />}
                 style={{ height: 80, textAlignVertical: 'top' }}
               />
             </View>
