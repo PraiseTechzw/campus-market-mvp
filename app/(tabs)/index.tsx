@@ -101,15 +101,10 @@ export default function HomeScreen() {
   };
 
   const mapProductFromDB = (product: any): Product => ({
-    id: product.id,
-    title: product.title,
-    description: product.description,
-    price: product.price,
-    category: product.category,
+    ...product,
     condition: product.condition as 'new' | 'used',
-    images: product.images ?? [],
     specifications: product.specifications as Record<string, any>,
-    seller_id: product.seller_id,
+    images: product.images ?? [],
     seller: {
       id: product.seller.id,
       email: product.seller.email,
@@ -126,15 +121,10 @@ export default function HomeScreen() {
       last_active: product.seller.last_active,
       is_online: product.seller.is_online,
       created_at: product.seller.created_at,
-      updated_at: product.seller.updated_at
-    },
-    is_sold: product.is_sold,
-    is_featured: product.is_featured,
-    view_count: product.view_count,
-    location: product.location ?? undefined,
-    tags: product.tags ?? [],
-    created_at: product.created_at,
-    updated_at: product.updated_at
+      updated_at: product.seller.updated_at,
+      bio: product.seller.bio ?? undefined,
+      verification_status: product.seller.verification_status
+    }
   });
 
   const fetchProducts = async () => {
