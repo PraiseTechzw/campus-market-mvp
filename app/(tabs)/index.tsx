@@ -222,6 +222,8 @@ export default function HomeScreen() {
   };
 
   const fetchUniversityProducts = async () => {
+    if (!user?.university) return;
+    
     try {
       const { data, error } = await supabase
         .from('products')
@@ -230,7 +232,7 @@ export default function HomeScreen() {
           seller:users(*)
         `)
         .eq('is_sold', false)
-        .eq('seller.university', user?.university)
+        .filter('seller.university', 'eq', user.university)
         .order('created_at', { ascending: false })
         .limit(5);
 
@@ -842,6 +844,43 @@ export default function HomeScreen() {
         }
       >
         {renderHeroBanner()}
+        <View style={styles.categoryStackContainer}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.categoryStack}
+          >
+            {CATEGORIES.map((category, index) => (
+              <TouchableOpacity
+                key={category}
+                style={[styles.categoryStackItem, { backgroundColor: colors.surface }]}
+                onPress={() => router.push({
+                  pathname: '/(tabs)/search',
+                  params: { category }
+                })}
+              >
+                <View style={[styles.categoryStackIcon, { backgroundColor: colors.primary }]}>
+                  <Ionicons 
+                    name={
+                      category === 'Electronics' ? 'phone-portrait' :
+                      category === 'Books' ? 'book' :
+                      category === 'Fashion' ? 'shirt' :
+                      category === 'Services' ? 'construct' :
+                      category === 'Furniture' ? 'bed' :
+                      category === 'Sports' ? 'football' :
+                      category === 'Beauty' ? 'flower' :
+                      category === 'Food' ? 'restaurant' :
+                      'ellipsis-horizontal'
+                    } 
+                    size={24} 
+                    color="#FFFFFF" 
+                  />
+                </View>
+                <Text style={[styles.categoryStackText, { color: colors.text }]}>{category}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
         {renderUniversityProducts()}
         {renderRecommendedProducts()}
         {renderFlashDeals()}
@@ -1408,5 +1447,37 @@ const styles = StyleSheet.create({
   },
   bottomSpacing: {
     height: 100,
+  },
+  categoryStackContainer: {
+    marginTop: -20,
+    marginBottom: 20,
+  },
+  categoryStack: {
+    paddingHorizontal: 20,
+    gap: 12,
+  },
+  categoryStackItem: {
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
+    marginRight: 12,
+  },
+  categoryStackIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  categoryStackText: {
+    fontSize: 12,
+    fontWeight: '600',
+    textAlign: 'center',
   },
 });
