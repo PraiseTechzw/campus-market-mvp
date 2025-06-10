@@ -1,14 +1,14 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
-import { Link, useRouter } from 'expo-router';
-import { MotiView } from 'moti';
-import { LinearGradient } from 'expo-linear-gradient';
-import { useAuth } from '@/contexts/AuthContext';
-import { useTheme } from '@/contexts/ThemeContext';
-import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
+import { Input } from '@/components/ui/Input';
+import { useAuth } from '@/contexts/AuthContext';
+import { useTheme } from '@/contexts/ThemeContext';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Link, useRouter } from 'expo-router';
+import { MotiView } from 'moti';
+import React, { useState } from 'react';
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Toast from 'react-native-toast-message';
 
 export default function LoginScreen() {
@@ -46,21 +46,40 @@ export default function LoginScreen() {
     if (!validateForm()) return;
     
     setLoading(true);
-    const { error } = await signIn(formData.email, formData.password);
-    setLoading(false);
-    
-    if (error) {
-      Toast.show({
-        type: 'error',
-        text1: 'Login Failed',
-        text2: error,
-      });
-    } else {
+    try {
+      const { error } = await signIn(formData.email, formData.password);
+      
+      if (error) {
+        console.error('Login error:', error);
+        if (error.includes('Email not confirmed')) {
+          router.push({
+            pathname: '/(auth)/verify-email',
+            params: { email: formData.email }
+          });
+          return;
+        }
+        Toast.show({
+          type: 'error',
+          text1: 'Login Failed',
+          text2: error,
+        });
+        setLoading(false);
+        return;
+      }
+      
       Toast.show({
         type: 'success',
         text1: 'Welcome Back!',
         text2: 'You have successfully signed in',
       });
+    } catch (error: any) {
+      console.error('Unexpected error during login:', error);
+      Toast.show({
+        type: 'error',
+        text1: 'Login Failed',
+        text2: error.message || 'An unexpected error occurred',
+      });
+      setLoading(false);
     }
   };
 
@@ -117,7 +136,7 @@ export default function LoginScreen() {
                 keyboardType="email-address"
                 autoCapitalize="none"
                 error={errors.email}
-                leftIcon={<Ionicons name="mail\" size={20} color={colors.textTertiary} />}
+                leftIcon={<Ionicons name="mail" size={20} color={colors.textTertiary} />}
               />
 
               <Input
@@ -127,7 +146,7 @@ export default function LoginScreen() {
                 onChangeText={(text) => setFormData({ ...formData, password: text })}
                 secureTextEntry
                 error={errors.password}
-                leftIcon={<Ionicons name="lock-closed\" size={20} color={colors.textTertiary} />}
+                leftIcon={<Ionicons name="lock-closed" size={20} color={colors.textTertiary} />}
               />
 
               <View style={styles.forgotPasswordContainer}>

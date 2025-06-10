@@ -62,7 +62,10 @@ export const deleteImage = async (bucket: string, path: string): Promise<boolean
 export const getUserProfile = async (userId: string) => {
   try {
     const { data, error } = await supabase
-      .rpc('get_user_profile', { user_id: userId });
+      .from('users')
+      .select('*')
+      .eq('id', userId)
+      .single();
 
     if (error) throw error;
     return data;
@@ -76,10 +79,15 @@ export const getUserProfile = async (userId: string) => {
 export const getUserSavedProducts = async (userId: string) => {
   try {
     const { data, error } = await supabase
-      .rpc('get_user_saved_products', { user_id: userId });
+      .from('saved_products')
+      .select(`
+        *,
+        product:products(*)
+      `)
+      .eq('user_id', userId);
 
     if (error) throw error;
-    return data;
+    return data.map(item => item.product);
   } catch (error) {
     console.error('Error getting saved products:', error);
     return [];
@@ -90,7 +98,15 @@ export const getUserSavedProducts = async (userId: string) => {
 export const getUserOrders = async (userId: string, role: 'buyer' | 'seller') => {
   try {
     const { data, error } = await supabase
-      .rpc('get_user_orders', { user_id: userId, role });
+      .from('orders')
+      .select(`
+        *,
+        buyer:users!buyer_id(*),
+        seller:users!seller_id(*),
+        product:products(*)
+      `)
+      .eq(role === 'buyer' ? 'buyer_id' : 'seller_id', userId)
+      .order('created_at', { ascending: false });
 
     if (error) throw error;
     return data;
@@ -104,7 +120,16 @@ export const getUserOrders = async (userId: string, role: 'buyer' | 'seller') =>
 export const getUserChats = async (userId: string) => {
   try {
     const { data, error } = await supabase
-      .rpc('get_user_chats', { user_id: userId });
+      .from('chats')
+      .select(`
+        *,
+        buyer:users!buyer_id(*),
+        seller:users!seller_id(*),
+        product:products(*)
+      `)
+      .or(`buyer_id.eq.${userId},seller_id.eq.${userId}`)
+      .order('last_message_at', { ascending: false, nullsFirst: false })
+      .order('created_at', { ascending: false });
 
     if (error) throw error;
     return data;
@@ -118,7 +143,13 @@ export const getUserChats = async (userId: string) => {
 export const getProductDetails = async (productId: string) => {
   try {
     const { data, error } = await supabase
-      .rpc('get_product_details', { product_id: productId });
+      .from('products')
+      .select(`
+        *,
+        seller:users(*)
+      `)
+      .eq('id', productId)
+      .single();
 
     if (error) throw error;
     return data;
@@ -131,8 +162,24 @@ export const getProductDetails = async (productId: string) => {
 // Helper function to get related products
 export const getRelatedProducts = async (productId: string, limit = 6) => {
   try {
+    const { data: product, error: productError } = await supabase
+      .from('products')
+      .select('category')
+      .eq('id', productId)
+      .single();
+
+    if (productError) throw productError;
+
     const { data, error } = await supabase
-      .rpc('get_related_products', { product_id: productId, limit_count: limit });
+      .from('products')
+      .select(`
+        *,
+        seller:users(*)
+      `)
+      .eq('category', product.category)
+      .eq('is_sold', false)
+      .neq('id', productId)
+      .limit(limit);
 
     if (error) throw error;
     return data;
@@ -153,16 +200,55 @@ export const searchProducts = async (
   limit = 20
 ) => {
   try {
-    const { data, error } = await supabase
-      .rpc('search_products', {
-        search_query: query || null,
-        category_filter: category || null,
-        min_price: minPrice || null,
-        max_price: maxPrice || null,
-        condition_filter: condition || null,
-        sort_by: sortBy,
-        limit_count: limit
-      });
+    let queryBuilder = supabase
+      .from('products')
+      .select(`
+        *,
+        seller:users(*)
+      `)
+      .eq('is_sold', false);
+
+    if (query) {
+      queryBuilder = queryBuilder.ilike('title', `%${query}%`);
+    }
+
+    if (category) {
+      queryBuilder = queryBuilder.eq('category', category);
+    }
+
+    if (minPrice !== undefined) {
+      queryBuilder = queryBuilder.gte('price', minPrice);
+    }
+
+    if (maxPrice !== undefined) {
+      queryBuilder = queryBuilder.lte('price', maxPrice);
+    }
+
+    if (condition) {
+      queryBuilder = queryBuilder.eq('condition', condition);
+    }
+
+    // Apply sorting
+    switch (sortBy) {
+      case 'price_asc':
+        queryBuilder = queryBuilder.order('price', { ascending: true });
+        break;
+      case 'price_desc':
+        queryBuilder = queryBuilder.order('price', { ascending: false });
+        break;
+      case 'newest':
+        queryBuilder = queryBuilder.order('created_at', { ascending: false });
+        break;
+      case 'popular':
+        queryBuilder = queryBuilder.order('view_count', { ascending: false });
+        break;
+      default:
+        queryBuilder = queryBuilder.order('created_at', { ascending: false });
+    }
+
+    queryBuilder = queryBuilder.limit(limit);
+
+    const { data, error } = await queryBuilder;
 
     if (error) throw error;
     return data;
@@ -175,8 +261,10 @@ export const searchProducts = async (
 // Helper function to increment product view count
 export const incrementViewCount = async (productId: string) => {
   try {
-    const { error } = await supabase
-      .rpc('increment_view_count', { product_id: productId });
+    const { data, error } = await supabase
+      .from('products')
+      .update({ view_count: supabase.rpc('increment', { row_id: productId, table_name: 'products', column_name: 'view_count' }) })
+      .eq('id', productId);
 
     if (error) throw error;
     return true;
@@ -190,10 +278,14 @@ export const incrementViewCount = async (productId: string) => {
 export const isProductSaved = async (productId: string, userId: string) => {
   try {
     const { data, error } = await supabase
-      .rpc('is_product_saved', { p_product_id: productId, p_user_id: userId });
+      .from('saved_products')
+      .select('id')
+      .eq('product_id', productId)
+      .eq('user_id', userId)
+      .single();
 
-    if (error) throw error;
-    return data;
+    if (error && error.code !== 'PGRST116') throw error;
+    return !!data;
   } catch (error) {
     console.error('Error checking if product is saved:', error);
     return false;
@@ -204,7 +296,14 @@ export const isProductSaved = async (productId: string, userId: string) => {
 export const getTrendingProducts = async (limit = 10) => {
   try {
     const { data, error } = await supabase
-      .rpc('get_trending_products', { limit_count: limit });
+      .from('products')
+      .select(`
+        *,
+        seller:users(*)
+      `)
+      .eq('is_sold', false)
+      .order('view_count', { ascending: false })
+      .limit(limit);
 
     if (error) throw error;
     return data;
@@ -217,8 +316,19 @@ export const getTrendingProducts = async (limit = 10) => {
 // Helper function to get new arrivals
 export const getNewArrivals = async (daysAgo = 7, limit = 10) => {
   try {
+    const date = new Date();
+    date.setDate(date.getDate() - daysAgo);
+    
     const { data, error } = await supabase
-      .rpc('get_new_arrivals', { days_ago: daysAgo, limit_count: limit });
+      .from('products')
+      .select(`
+        *,
+        seller:users(*)
+      `)
+      .eq('is_sold', false)
+      .gte('created_at', date.toISOString())
+      .order('created_at', { ascending: false })
+      .limit(limit);
 
     if (error) throw error;
     return data;
@@ -232,7 +342,15 @@ export const getNewArrivals = async (daysAgo = 7, limit = 10) => {
 export const getFlashDeals = async (maxPrice = 100, limit = 8) => {
   try {
     const { data, error } = await supabase
-      .rpc('get_flash_deals', { max_price: maxPrice, limit_count: limit });
+      .from('products')
+      .select(`
+        *,
+        seller:users(*)
+      `)
+      .eq('is_sold', false)
+      .lte('price', maxPrice)
+      .order('created_at', { ascending: false })
+      .limit(limit);
 
     if (error) throw error;
     return data;
@@ -246,7 +364,10 @@ export const getFlashDeals = async (maxPrice = 100, limit = 8) => {
 export const getCategoryStats = async () => {
   try {
     const { data, error } = await supabase
-      .rpc('get_category_stats');
+      .from('products')
+      .select('category, count(*)')
+      .eq('is_sold', false)
+      .group('category');
 
     if (error) throw error;
     return data;
@@ -259,11 +380,48 @@ export const getCategoryStats = async () => {
 // Helper function to get user earnings
 export const getUserEarnings = async (userId: string) => {
   try {
-    const { data, error } = await supabase
-      .rpc('get_user_earnings', { user_id: userId });
+    const { data: soldProducts, error } = await supabase
+      .from('products')
+      .select('price, created_at, category')
+      .eq('seller_id', userId)
+      .eq('is_sold', true);
 
     if (error) throw error;
-    return data;
+
+    const totalEarnings = soldProducts.reduce((sum, product) => sum + Number(product.price), 0);
+    
+    // Calculate this month and last month earnings
+    const now = new Date();
+    const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0);
+
+    const thisMonthProducts = soldProducts.filter(p => new Date(p.created_at) >= thisMonthStart);
+    const lastMonthProducts = soldProducts.filter(p => {
+      const date = new Date(p.created_at);
+      return date >= lastMonthStart && date <= lastMonthEnd;
+    });
+
+    const thisMonth = thisMonthProducts.reduce((sum, p) => sum + Number(p.price), 0);
+    const lastMonth = lastMonthProducts.reduce((sum, p) => sum + Number(p.price), 0);
+
+    // Calculate top category
+    const categoryCount: Record<string, number> = {};
+    soldProducts.forEach(p => {
+      categoryCount[p.category] = (categoryCount[p.category] || 0) + 1;
+    });
+    
+    const topCategory = Object.keys(categoryCount).reduce((a, b) => 
+      categoryCount[a] > categoryCount[b] ? a : b, Object.keys(categoryCount)[0] || '');
+
+    return {
+      totalEarnings,
+      thisMonth,
+      lastMonth,
+      totalSales: soldProducts.length,
+      averagePrice: soldProducts.length > 0 ? totalEarnings / soldProducts.length : 0,
+      topCategory,
+    };
   } catch (error) {
     console.error('Error getting user earnings:', error);
     return null;
@@ -274,7 +432,11 @@ export const getUserEarnings = async (userId: string) => {
 export const markMessagesRead = async (chatId: string, userId: string) => {
   try {
     const { error } = await supabase
-      .rpc('mark_messages_read', { p_chat_id: chatId, p_user_id: userId });
+      .from('messages')
+      .update({ is_read: true })
+      .eq('chat_id', chatId)
+      .neq('sender_id', userId)
+      .eq('is_read', false);
 
     if (error) throw error;
     return true;
@@ -287,11 +449,20 @@ export const markMessagesRead = async (chatId: string, userId: string) => {
 // Helper function to get unread message count
 export const getUnreadMessageCount = async (userId: string) => {
   try {
-    const { data, error } = await supabase
-      .rpc('get_unread_message_count', { user_id: userId });
+    const { data, error, count } = await supabase
+      .from('messages')
+      .select('id', { count: 'exact' })
+      .eq('is_read', false)
+      .neq('sender_id', userId)
+      .in('chat_id', 
+        supabase
+          .from('chats')
+          .select('id')
+          .or(`buyer_id.eq.${userId},seller_id.eq.${userId}`)
+      );
 
     if (error) throw error;
-    return data;
+    return count || 0;
   } catch (error) {
     console.error('Error getting unread message count:', error);
     return 0;
@@ -301,11 +472,14 @@ export const getUnreadMessageCount = async (userId: string) => {
 // Helper function to get unread notification count
 export const getUnreadNotificationCount = async (userId: string) => {
   try {
-    const { data, error } = await supabase
-      .rpc('get_unread_notification_count', { user_id: userId });
+    const { data, error, count } = await supabase
+      .from('notifications')
+      .select('id', { count: 'exact' })
+      .eq('user_id', userId)
+      .eq('is_read', false);
 
     if (error) throw error;
-    return data;
+    return count || 0;
   } catch (error) {
     console.error('Error getting unread notification count:', error);
     return 0;
@@ -316,7 +490,10 @@ export const getUnreadNotificationCount = async (userId: string) => {
 export const markAllNotificationsRead = async (userId: string) => {
   try {
     const { error } = await supabase
-      .rpc('mark_all_notifications_read', { user_id: userId });
+      .from('notifications')
+      .update({ is_read: true })
+      .eq('user_id', userId)
+      .eq('is_read', false);
 
     if (error) throw error;
     return true;

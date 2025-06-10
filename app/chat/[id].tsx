@@ -1,15 +1,14 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput, KeyboardAvoidingView, Platform } from 'react-native';
-import { useRouter, useLocalSearchParams } from 'expo-router';
-import { MotiView } from 'moti';
+import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
-import { Card } from '@/components/ui/Card';
-import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
-import { supabase } from '@/lib/supabase';
+import { MessagingService } from '@/lib/messaging';
+import { NotificationService } from '@/lib/notifications';
 import { Chat, Message } from '@/types';
 import { Ionicons } from '@expo/vector-icons';
-import { Image } from 'react-native';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { MotiView } from 'moti';
+import React, { useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, FlatList, Image, KeyboardAvoidingView, Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import Toast from 'react-native-toast-message';
 
 export default function ChatScreen() {
@@ -24,31 +23,31 @@ export default function ChatScreen() {
   const [messageText, setMessageText] = useState('');
   const [sending, setSending] = useState(false);
   const flatListRef = useRef<FlatList>(null);
+  const subscription = useRef<{ unsubscribe: () => void } | null>(null);
 
   useEffect(() => {
     if (id && user) {
       fetchChat();
       fetchMessages();
       subscribeToMessages();
+      
+      // Mark messages as read when opening the chat
+      MessagingService.markMessagesAsRead(id as string, user.id);
     }
+    
+    return () => {
+      if (subscription.current) {
+        subscription.current.unsubscribe();
+      }
+    };
   }, [id, user]);
 
   const fetchChat = async () => {
     try {
-      const { data, error } = await supabase
-        .from('chats')
-        .select(`
-          *,
-          buyer:users!buyer_id(*),
-          seller:users!seller_id(*),
-          product:products(*)
-        `)
-        .eq('id', id)
-        .single();
-
-      if (error) throw error;
+      const { data, error } = await MessagingService.getChatById(id as string);
+      if (error) throw new Error(error);
       setChat(data);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error fetching chat:', error);
       Toast.show({
         type: 'error',
@@ -60,17 +59,14 @@ export default function ChatScreen() {
 
   const fetchMessages = async () => {
     try {
-      const { data, error } = await supabase
-        .from('messages')
-        .select(`
-          *,
-          sender:users(*)
-        `)
-        .eq('chat_id', id)
-        .order('created_at', { ascending: true });
-
-      if (error) throw error;
+      const { data, error } = await MessagingService.getMessages(id as string);
+      if (error) throw new Error(error);
       setMessages(data || []);
+      
+      // Scroll to bottom after messages load
+      setTimeout(() => {
+        flatListRef.current?.scrollToEnd({ animated: false });
+      }, 100);
     } catch (error) {
       console.error('Error fetching messages:', error);
     } finally {
@@ -79,34 +75,42 @@ export default function ChatScreen() {
   };
 
   const subscribeToMessages = () => {
-    const subscription = supabase
-      .channel(`chat-${id}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'messages',
-          filter: `chat_id=eq.${id}`,
-        },
-        (payload) => {
-          const newMessage = payload.new as Message;
-          setMessages(prev => [...prev, newMessage]);
-          
-          // Scroll to bottom when new message arrives
-          setTimeout(() => {
-            flatListRef.current?.scrollToEnd({ animated: true });
-          }, 100);
+    if (!id) return;
+    
+    subscription.current = MessagingService.subscribeToMessages(id as string, (newMessage) => {
+      // Add the new message to the list
+      setMessages(prev => {
+        // Check if message already exists to prevent duplicates
+        const exists = prev.some(msg => msg.id === newMessage.id);
+        if (exists) return prev;
+        
+        const updatedMessages = [...prev, newMessage];
+        
+        // Scroll to bottom when new message arrives
+        setTimeout(() => {
+          flatListRef.current?.scrollToEnd({ animated: true });
+        }, 100);
+        
+        // Mark message as read if it's not from the current user
+        if (newMessage.sender_id !== user?.id) {
+          MessagingService.markMessagesAsRead(id as string, user?.id || '');
         }
-      )
-      .subscribe();
-
-    return () => {
-      subscription.unsubscribe();
-    };
+        
+        return updatedMessages;
+      });
+      
+      // Show notification for new messages if not from current user
+      if (newMessage.sender_id !== user?.id) {
+        NotificationService.sendLocalNotification(
+          'New Message',
+          newMessage.content,
+          { chatId: id }
+        );
+      }
+    });
   };
 
-  const sendMessage = async () => {
+  const handleSendMessage = async () => {
     if (!messageText.trim() || !user || !chat) return;
 
     setSending(true);
@@ -114,16 +118,13 @@ export default function ChatScreen() {
     setMessageText('');
 
     try {
-      const { error } = await supabase
-        .from('messages')
-        .insert({
-          chat_id: id,
-          sender_id: user.id,
-          content: tempMessage.trim(),
-          message_type: 'text',
-        });
+      const { error } = await MessagingService.sendMessage(
+        id as string,
+        user.id,
+        tempMessage.trim()
+      );
 
-      if (error) throw error;
+      if (error) throw new Error(error);
     } catch (error: any) {
       Toast.show({
         type: 'error',
@@ -139,6 +140,24 @@ export default function ChatScreen() {
   const renderMessage = ({ item, index }: { item: Message; index: number }) => {
     const isOwnMessage = item.sender_id === user?.id;
     const showAvatar = index === 0 || messages[index - 1].sender_id !== item.sender_id;
+    const isSystemMessage = item.message_type === 'system';
+
+    if (isSystemMessage) {
+      return (
+        <MotiView
+          from={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ type: 'timing', duration: 300 }}
+          style={styles.systemMessageContainer}
+        >
+          <View style={[styles.systemMessage, { backgroundColor: colors.border }]}>
+            <Text style={[styles.systemMessageText, { color: colors.textSecondary }]}>
+              {item.content}
+            </Text>
+          </View>
+        </MotiView>
+      );
+    }
 
     return (
       <MotiView
@@ -152,7 +171,11 @@ export default function ChatScreen() {
       >
         {!isOwnMessage && showAvatar && (
           <View style={[styles.avatar, { backgroundColor: colors.primary }]}>
-            <Ionicons name="person" size={16} color="#FFFFFF" />
+            {item.sender?.avatar_url ? (
+              <Image source={{ uri: item.sender.avatar_url }} style={styles.avatarImage} />
+            ) : (
+              <Ionicons name="person" size={16} color="#FFFFFF" />
+            )}
           </View>
         )}
         
@@ -183,6 +206,11 @@ export default function ChatScreen() {
     );
   };
 
+  if (!user) {
+    router.replace('/(auth)');
+    return null;
+  }
+
   if (loading) {
     return <LoadingSpinner fullScreen />;
   }
@@ -209,6 +237,7 @@ export default function ChatScreen() {
     <KeyboardAvoidingView 
       style={[styles.container, { backgroundColor: colors.background }]}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
     >
       {/* Header */}
       <View style={[styles.header, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
@@ -240,7 +269,17 @@ export default function ChatScreen() {
           </View>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.moreButton}>
+        <TouchableOpacity 
+          style={styles.moreButton}
+          onPress={() => {
+            // Show options menu
+            Toast.show({
+              type: 'info',
+              text1: 'Coming Soon',
+              text2: 'More options will be available soon',
+            });
+          }}
+        >
           <Ionicons name="ellipsis-vertical" size={24} color={colors.text} />
         </TouchableOpacity>
       </View>
@@ -254,6 +293,14 @@ export default function ChatScreen() {
         style={styles.messagesList}
         contentContainerStyle={styles.messagesContent}
         onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: false })}
+        ListEmptyComponent={() => (
+          <View style={styles.emptyContainer}>
+            <Ionicons name="chatbubbles-outline" size={48} color={colors.textTertiary} />
+            <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
+              No messages yet. Start the conversation!
+            </Text>
+          </View>
+        )}
       />
 
       {/* Input */}
@@ -276,14 +323,18 @@ export default function ChatScreen() {
                 opacity: sending ? 0.5 : 1,
               }
             ]}
-            onPress={sendMessage}
+            onPress={handleSendMessage}
             disabled={!messageText.trim() || sending}
           >
-            <Ionicons 
-              name="send" 
-              size={20} 
-              color={messageText.trim() ? '#FFFFFF' : colors.textTertiary} 
-            />
+            {sending ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : (
+              <Ionicons 
+                name="send" 
+                size={20} 
+                color={messageText.trim() ? '#FFFFFF' : colors.textTertiary} 
+              />
+            )}
           </TouchableOpacity>
         </View>
       </View>
@@ -357,6 +408,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 8,
+    overflow: 'hidden',
+  },
+  avatarImage: {
+    width: '100%',
+    height: '100%',
   },
   messageBubble: {
     maxWidth: '75%',
@@ -371,6 +427,21 @@ const styles = StyleSheet.create({
   },
   messageTime: {
     fontSize: 12,
+    alignSelf: 'flex-end',
+  },
+  systemMessageContainer: {
+    alignItems: 'center',
+    marginVertical: 16,
+  },
+  systemMessage: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 16,
+    maxWidth: '80%',
+  },
+  systemMessageText: {
+    fontSize: 12,
+    textAlign: 'center',
   },
   inputContainer: {
     padding: 16,
@@ -414,5 +485,18 @@ const styles = StyleSheet.create({
     fontSize: 14,
     textAlign: 'center',
     lineHeight: 20,
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 40,
+    marginTop: 80,
+  },
+  emptyText: {
+    fontSize: 16,
+    textAlign: 'center',
+    marginTop: 16,
+    lineHeight: 22,
   },
 });

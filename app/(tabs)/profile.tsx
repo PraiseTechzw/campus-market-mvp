@@ -8,6 +8,7 @@ import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { supabase } from '@/lib/supabase';
+import { NotificationService } from '@/lib/notifications';
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'react-native';
 import Toast from 'react-native-toast-message';
@@ -41,10 +42,13 @@ export default function ProfileScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
+  const [unreadNotifications, setUnreadNotifications] = useState(0);
 
   useEffect(() => {
     if (user) {
       fetchProfileStats();
+      fetchNotificationPreferences();
+      fetchUnreadNotificationCount();
     }
   }, [user]);
 
@@ -100,9 +104,41 @@ export default function ProfileScreen() {
     }
   };
 
+  const fetchNotificationPreferences = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('user_preferences')
+        .select('notifications_enabled')
+        .eq('user_id', user?.id)
+        .single();
+
+      if (error && error.code !== 'PGRST116') throw error;
+      
+      if (data) {
+        setNotificationsEnabled(data.notifications_enabled);
+      }
+    } catch (error) {
+      console.error('Error fetching notification preferences:', error);
+    }
+  };
+
+  const fetchUnreadNotificationCount = async () => {
+    if (!user) return;
+    
+    try {
+      const { count, error } = await NotificationService.getUnreadCount(user.id);
+      if (error) throw new Error(error);
+      setUnreadNotifications(count);
+    } catch (error) {
+      console.error('Error fetching unread notification count:', error);
+    }
+  };
+
   const onRefresh = () => {
     setRefreshing(true);
     fetchProfileStats();
+    fetchNotificationPreferences();
+    fetchUnreadNotificationCount();
   };
 
   const handleSignOut = () => {
@@ -240,6 +276,8 @@ export default function ProfileScreen() {
               thumbColor="#FFFFFF"
             />
           ),
+          badge: unreadNotifications > 0 ? unreadNotifications.toString() : undefined,
+          badgeColor: colors.primary,
         },
         {
           icon: getThemeIcon(),

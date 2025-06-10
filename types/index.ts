@@ -41,6 +41,10 @@ export interface Chat {
   product_id: string;
   last_message?: string;
   last_message_at?: string;
+  last_message_sender_id?: string;
+  is_archived: boolean;
+  unread_count: number;
+  is_read: boolean;
   created_at: string;
   updated_at: string;
   buyer: User;
@@ -53,22 +57,39 @@ export interface Message {
   chat_id: string;
   sender_id: string;
   content: string;
-  message_type: 'text' | 'image';
+  message_type: 'text' | 'image' | 'system';
+  media_url?: string;
   is_read: boolean;
+  is_edited: boolean;
+  edited_at?: string;
+  reply_to_id?: string;
   created_at: string;
   sender: User;
 }
 
+export interface MessageReaction {
+  id: string;
+  message_id: string;
+  user_id: string;
+  reaction: string;
+  created_at: string;
+}
+
 export interface Order {
   id: string;
+  order_number: string;
   buyer_id: string;
   seller_id: string;
   product_id: string;
   status: 'pending' | 'confirmed' | 'delivered' | 'cancelled';
-  payment_method: 'cod' | 'campus_meetup';
+  payment_method: string;
+  payment_status: string;
   total_amount: number;
-  delivery_address?: string;
-  delivery_notes?: string;
+  delivery_method: string;
+  meetup_location?: string;
+  meetup_time?: string;
+  completed_at?: string;
+  cancelled_at?: string;
   created_at: string;
   updated_at: string;
   buyer: User;
@@ -82,6 +103,7 @@ export interface Notification {
   title: string;
   body: string;
   type: 'message' | 'order' | 'product' | 'system';
+  priority: 'low' | 'normal' | 'high' | 'urgent';
   is_read: boolean;
   data?: any;
   created_at: string;
@@ -110,6 +132,17 @@ export interface Address {
   postal_code?: string;
   type: 'home' | 'dorm' | 'other';
   is_default: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PushToken {
+  id: string;
+  user_id: string;
+  token: string;
+  device_type: string;
+  is_active: boolean;
+  last_used: string;
   created_at: string;
   updated_at: string;
 }

@@ -5,6 +5,8 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useFrameworkReady } from '@/hooks/useFrameworkReady';
 import { ThemeProvider } from '@/contexts/ThemeContext';
 import { AuthProvider } from '@/contexts/AuthContext';
+import { NotificationProvider } from '@/contexts/NotificationContext';
+import { MessagingProvider } from '@/contexts/MessagingContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import Toast from 'react-native-toast-message';
 import { toastConfig } from '@/components/ui/Toast';
@@ -47,7 +49,11 @@ export default function RootLayout() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <ThemeProvider>
         <AuthProvider>
-          <RootLayoutContent />
+          <NotificationProvider>
+            <MessagingProvider>
+              <RootLayoutContent />
+            </MessagingProvider>
+          </NotificationProvider>
         </AuthProvider>
       </ThemeProvider>
     </GestureHandlerRootView>

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, TextInput, Animated } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, TextInput, Animated, Alert } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { MotiView } from 'moti';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -83,10 +83,12 @@ export default function VerifyEmailScreen() {
     setLoading(true);
     
     try {
+      console.log('Verifying OTP:', email, otpCode);
+      
       const { error } = await supabase.auth.verifyOtp({
         email: email!,
         token: otpCode,
-        type: 'email'
+        type: 'signup'
       });
 
       if (error) throw error;
@@ -99,6 +101,7 @@ export default function VerifyEmailScreen() {
 
       router.replace('/(onboarding)/welcome');
     } catch (error: any) {
+      console.error('Verification error:', error);
       Toast.show({
         type: 'error',
         text1: 'Verification Failed',
@@ -237,7 +240,7 @@ export default function VerifyEmailScreen() {
             title="Verify Email"
             onPress={handleVerifyOtp}
             loading={loading}
-            disabled={otp.join('').length !== 6}
+            disabled={otp.join('').length !== 6 || loading}
             style={styles.verifyButton}
           />
 

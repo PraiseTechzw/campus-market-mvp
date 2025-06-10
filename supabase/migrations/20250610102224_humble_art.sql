@@ -1,37 +1,8 @@
 /*
-  # Complete Campus Market Database Schema
+  # Campus Market Database Schema - Fixed Migration
 
-  1. New Tables
-    - `users` - User profiles with verification status
-    - `products` - Product listings with images and specifications
-    - `chats` - Chat conversations between users
-    - `messages` - Individual messages in chats
-    - `orders` - Order tracking and management
-    - `notifications` - User notifications
-    - `user_preferences` - User settings and preferences
-    - `verification_requests` - Student verification requests
-    - `saved_products` - User saved/favorited products
-    - `product_reviews` - Product reviews and ratings
-    - `user_addresses` - User delivery addresses
-    - `categories` - Product categories
-    - `reports` - User reports for products/users
-
-  2. Storage Buckets
-    - `avatars` - User profile pictures
-    - `products` - Product images
-    - `verification` - Student ID verification images
-    - `chat-media` - Chat images and media
-
-  3. Security
-    - Enable RLS on all tables
-    - Add comprehensive policies for data access
-    - Secure storage bucket policies
-
-  4. Functions
-    - Full-text search for products
-    - View count tracking
-    - Notification creation
-    - User profile management
+  This migration fixes the IMMUTABLE function issues in the previous migrations
+  and provides a complete schema for the Campus Market application.
 */
 
 -- Enable necessary extensions
@@ -49,7 +20,7 @@ CREATE TABLE IF NOT EXISTS users (
   bio text,
   is_verified boolean DEFAULT false,
   verification_status text DEFAULT 'pending' CHECK (verification_status IN ('pending', 'approved', 'rejected')),
-  rating decimal(3,2) DEFAULT 0.0 CHECK (rating >= 0 AND rating <= 5),
+  rating decimal(3,2) DEFAULT 0.0,
   total_reviews integer DEFAULT 0,
   total_sales integer DEFAULT 0,
   total_earnings decimal(10,2) DEFAULT 0.0,
@@ -90,8 +61,8 @@ CREATE TABLE IF NOT EXISTS products (
   title text NOT NULL,
   description text NOT NULL,
   price decimal(10,2) NOT NULL CHECK (price > 0),
-  category_id uuid REFERENCES categories(id) NOT NULL,
-  category text NOT NULL, -- Denormalized for easier queries
+  category_id uuid REFERENCES categories(id),
+  category text NOT NULL,
   condition text NOT NULL CHECK (condition IN ('new', 'used', 'refurbished')),
   images text[] DEFAULT '{}',
   specifications jsonb DEFAULT '{}',
@@ -105,6 +76,25 @@ CREATE TABLE IF NOT EXISTS products (
   tags text[] DEFAULT '{}',
   availability_status text DEFAULT 'available' CHECK (availability_status IN ('available', 'pending', 'sold', 'removed')),
   expires_at timestamptz,
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now()
+);
+
+-- Create user_addresses table
+CREATE TABLE IF NOT EXISTS user_addresses (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid REFERENCES users(id) ON DELETE CASCADE NOT NULL,
+  name text NOT NULL,
+  type text DEFAULT 'other' CHECK (type IN ('dorm', 'home', 'work', 'other')),
+  address_line_1 text NOT NULL,
+  address_line_2 text,
+  city text NOT NULL,
+  state text,
+  postal_code text,
+  country text DEFAULT 'Zimbabwe',
+  phone text,
+  is_default boolean DEFAULT false,
+  delivery_instructions text,
   created_at timestamptz DEFAULT now(),
   updated_at timestamptz DEFAULT now()
 );
@@ -144,7 +134,7 @@ CREATE TABLE IF NOT EXISTS messages (
 -- Create orders table
 CREATE TABLE IF NOT EXISTS orders (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  order_number text UNIQUE NOT NULL,
+  order_number text UNIQUE,
   buyer_id uuid REFERENCES users(id) ON DELETE CASCADE NOT NULL,
   seller_id uuid REFERENCES users(id) ON DELETE CASCADE NOT NULL,
   product_id uuid REFERENCES products(id) ON DELETE CASCADE NOT NULL,
@@ -251,25 +241,6 @@ CREATE TABLE IF NOT EXISTS product_reviews (
   created_at timestamptz DEFAULT now(),
   updated_at timestamptz DEFAULT now(),
   UNIQUE(reviewer_id, product_id)
-);
-
--- Create user_addresses table
-CREATE TABLE IF NOT EXISTS user_addresses (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id uuid REFERENCES users(id) ON DELETE CASCADE NOT NULL,
-  name text NOT NULL,
-  type text DEFAULT 'other' CHECK (type IN ('dorm', 'home', 'work', 'other')),
-  address_line_1 text NOT NULL,
-  address_line_2 text,
-  city text NOT NULL,
-  state text,
-  postal_code text,
-  country text DEFAULT 'Zimbabwe',
-  phone text,
-  is_default boolean DEFAULT false,
-  delivery_instructions text,
-  created_at timestamptz DEFAULT now(),
-  updated_at timestamptz DEFAULT now()
 );
 
 -- Create reports table
@@ -473,17 +444,23 @@ CREATE INDEX IF NOT EXISTS idx_product_reviews_rating ON product_reviews(rating)
 CREATE INDEX IF NOT EXISTS idx_user_addresses_user_id ON user_addresses(user_id);
 CREATE INDEX IF NOT EXISTS idx_user_addresses_is_default ON user_addresses(is_default);
 
--- Create full-text search index for products
-CREATE INDEX IF NOT EXISTS idx_products_search ON products USING gin(
-  to_tsvector('english', 
-    title || ' ' || 
-    description || ' ' || 
-    category || ' ' || 
-    COALESCE(array_to_string(tags, ' '), '') || ' ' ||
-    COALESCE((specifications->>'brand')::text, '') || ' ' ||
-    COALESCE((specifications->>'model')::text, '')
-  )
-);
+-- Create full-text search index for products using immutable functions
+CREATE OR REPLACE FUNCTION products_search_vector(title text, description text, category text, tags text[], specs jsonb)
+RETURNS tsvector
+LANGUAGE sql IMMUTABLE AS $$
+  SELECT to_tsvector('english', 
+    coalesce(title, '') || ' ' || 
+    coalesce(description, '') || ' ' || 
+    coalesce(category, '') || ' ' || 
+    coalesce(array_to_string(tags, ' '), '') || ' ' ||
+    coalesce((specs->>'brand')::text, '') || ' ' ||
+    coalesce((specs->>'model')::text, '')
+  );
+$$;
+
+-- Create the index using the immutable function
+CREATE INDEX IF NOT EXISTS idx_products_search ON products 
+  USING gin(products_search_vector(title, description, category, tags, specifications));
 
 -- Create functions for updating timestamps
 CREATE OR REPLACE FUNCTION update_updated_at_column()
@@ -733,6 +710,45 @@ CREATE TRIGGER update_product_when_sold_trigger
   FOR EACH ROW
   EXECUTE FUNCTION update_product_when_sold();
 
+-- Create sequence for order numbers
+CREATE SEQUENCE IF NOT EXISTS order_number_seq START 1;
+
+-- Function to generate order number
+CREATE OR REPLACE FUNCTION generate_order_number()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.order_number := 'CM-' || to_char(now(), 'YYYYMMDD') || '-' || 
+                      lpad(nextval('order_number_seq')::text, 4, '0');
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Trigger for order number generation
+CREATE TRIGGER generate_order_number_trigger
+  BEFORE INSERT ON orders
+  FOR EACH ROW
+  EXECUTE FUNCTION generate_order_number();
+
+-- Function to handle default address
+CREATE OR REPLACE FUNCTION handle_default_address()
+RETURNS TRIGGER AS $$
+BEGIN
+  IF NEW.is_default THEN
+    UPDATE user_addresses
+    SET is_default = false
+    WHERE user_id = NEW.user_id AND id != NEW.id;
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Trigger for default address
+CREATE TRIGGER handle_default_address_trigger
+  AFTER INSERT OR UPDATE ON user_addresses
+  FOR EACH ROW
+  WHEN (NEW.is_default = true)
+  EXECUTE FUNCTION handle_default_address();
+
 -- Create function for advanced product search
 CREATE OR REPLACE FUNCTION search_products(
   search_query text DEFAULT NULL,
@@ -780,14 +796,7 @@ BEGIN
     CASE 
       WHEN search_query IS NULL THEN 0
       ELSE ts_rank(
-        to_tsvector('english', 
-          p.title || ' ' || 
-          p.description || ' ' || 
-          p.category || ' ' || 
-          COALESCE(array_to_string(p.tags, ' '), '') || ' ' ||
-          COALESCE((p.specifications->>'brand')::text, '') || ' ' ||
-          COALESCE((p.specifications->>'model')::text, '')
-        ),
+        products_search_vector(p.title, p.description, p.category, p.tags, p.specifications),
         plainto_tsquery('english', search_query)
       )
     END as rank
@@ -797,14 +806,8 @@ BEGIN
     AND p.availability_status = 'available'
     AND (
       search_query IS NULL OR
-      to_tsvector('english', 
-        p.title || ' ' || 
-        p.description || ' ' || 
-        p.category || ' ' || 
-        COALESCE(array_to_string(p.tags, ' '), '') || ' ' ||
-        COALESCE((p.specifications->>'brand')::text, '') || ' ' ||
-        COALESCE((p.specifications->>'model')::text, '')
-      ) @@ plainto_tsquery('english', search_query)
+      products_search_vector(p.title, p.description, p.category, p.tags, p.specifications) @@ 
+      plainto_tsquery('english', search_query)
     )
     AND (category_filter IS NULL OR p.category = category_filter)
     AND (min_price IS NULL OR p.price >= min_price)
@@ -822,44 +825,140 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- Function to generate order number
-CREATE OR REPLACE FUNCTION generate_order_number()
-RETURNS TRIGGER AS $$
+-- Function to mark messages as read
+CREATE OR REPLACE FUNCTION mark_messages_read(p_chat_id uuid, p_user_id uuid)
+RETURNS void AS $$
 BEGIN
-  NEW.order_number := 'CM-' || to_char(now(), 'YYYYMMDD') || '-' || 
-                      lpad(nextval('order_number_seq')::text, 4, '0');
-  RETURN NEW;
+  UPDATE messages
+  SET is_read = true
+  WHERE chat_id = p_chat_id
+    AND is_read = false
+    AND sender_id != p_user_id;
 END;
-$$ LANGUAGE plpgsql;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- Create sequence for order numbers
-CREATE SEQUENCE IF NOT EXISTS order_number_seq START 1;
-
--- Trigger for order number generation
-CREATE TRIGGER generate_order_number_trigger
-  BEFORE INSERT ON orders
-  FOR EACH ROW
-  EXECUTE FUNCTION generate_order_number();
-
--- Function to handle default address
-CREATE OR REPLACE FUNCTION handle_default_address()
-RETURNS TRIGGER AS $$
+-- Function to get unread message count
+CREATE OR REPLACE FUNCTION get_unread_message_count(user_id uuid)
+RETURNS integer AS $$
+DECLARE
+  count_result integer;
 BEGIN
-  IF NEW.is_default THEN
-    UPDATE user_addresses
-    SET is_default = false
-    WHERE user_id = NEW.user_id AND id != NEW.id;
-  END IF;
-  RETURN NEW;
+  SELECT COUNT(*)
+  INTO count_result
+  FROM messages m
+  JOIN chats c ON m.chat_id = c.id
+  WHERE m.is_read = false
+    AND m.sender_id != user_id
+    AND (c.buyer_id = user_id OR c.seller_id = user_id);
+  
+  RETURN count_result;
 END;
-$$ LANGUAGE plpgsql;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- Trigger for default address
-CREATE TRIGGER handle_default_address_trigger
-  AFTER INSERT OR UPDATE ON user_addresses
-  FOR EACH ROW
-  WHEN (NEW.is_default = true)
-  EXECUTE FUNCTION handle_default_address();
+-- Function to get unread notification count
+CREATE OR REPLACE FUNCTION get_unread_notification_count(user_id uuid)
+RETURNS integer AS $$
+DECLARE
+  count_result integer;
+BEGIN
+  SELECT COUNT(*)
+  INTO count_result
+  FROM notifications
+  WHERE user_id = user_id AND is_read = false;
+  
+  RETURN count_result;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Function to check if product is saved by user
+CREATE OR REPLACE FUNCTION is_product_saved(p_product_id uuid, p_user_id uuid)
+RETURNS boolean AS $$
+DECLARE
+  is_saved boolean;
+BEGIN
+  SELECT EXISTS(
+    SELECT 1 FROM saved_products
+    WHERE product_id = p_product_id AND user_id = p_user_id
+  ) INTO is_saved;
+  
+  RETURN is_saved;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Function to mark all notifications as read
+CREATE OR REPLACE FUNCTION mark_all_notifications_read(user_id uuid)
+RETURNS void AS $$
+BEGIN
+  UPDATE notifications
+  SET is_read = true
+  WHERE user_id = user_id AND is_read = false;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Create storage buckets
+INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+VALUES 
+  ('avatars', 'User profile pictures', true, 5242880, ARRAY['image/jpeg', 'image/png', 'image/webp']),
+  ('products', 'Product images', true, 10485760, ARRAY['image/jpeg', 'image/png', 'image/webp']),
+  ('verification', 'Student ID verification images', false, 10485760, ARRAY['image/jpeg', 'image/png', 'application/pdf'])
+ON CONFLICT (id) DO NOTHING;
+
+-- Storage policies for avatars bucket
+CREATE POLICY "Public can view avatars" ON storage.objects
+  FOR SELECT USING (bucket_id = 'avatars');
+
+CREATE POLICY "Users can upload their own avatar" ON storage.objects
+  FOR INSERT WITH CHECK (
+    bucket_id = 'avatars' 
+    AND auth.uid()::text = (storage.foldername(name))[1]
+  );
+
+CREATE POLICY "Users can update their own avatar" ON storage.objects
+  FOR UPDATE USING (
+    bucket_id = 'avatars' 
+    AND auth.uid()::text = (storage.foldername(name))[1]
+  );
+
+CREATE POLICY "Users can delete their own avatar" ON storage.objects
+  FOR DELETE USING (
+    bucket_id = 'avatars' 
+    AND auth.uid()::text = (storage.foldername(name))[1]
+  );
+
+-- Storage policies for products bucket
+CREATE POLICY "Public can view product images" ON storage.objects
+  FOR SELECT USING (bucket_id = 'products');
+
+CREATE POLICY "Users can upload their product images" ON storage.objects
+  FOR INSERT WITH CHECK (
+    bucket_id = 'products' 
+    AND auth.uid()::text = (storage.foldername(name))[1]
+  );
+
+CREATE POLICY "Users can update their product images" ON storage.objects
+  FOR UPDATE USING (
+    bucket_id = 'products' 
+    AND auth.uid()::text = (storage.foldername(name))[1]
+  );
+
+CREATE POLICY "Users can delete their product images" ON storage.objects
+  FOR DELETE USING (
+    bucket_id = 'products' 
+    AND auth.uid()::text = (storage.foldername(name))[1]
+  );
+
+-- Storage policies for verification bucket
+CREATE POLICY "Users can view their own verification images" ON storage.objects
+  FOR SELECT USING (
+    bucket_id = 'verification' 
+    AND auth.uid()::text = (storage.foldername(name))[1]
+  );
+
+CREATE POLICY "Users can upload their verification images" ON storage.objects
+  FOR INSERT WITH CHECK (
+    bucket_id = 'verification' 
+    AND auth.uid()::text = (storage.foldername(name))[1]
+  );
 
 -- Grant necessary permissions
 GRANT USAGE ON SCHEMA public TO authenticated;
@@ -870,11 +969,3 @@ GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO authenticated;
 -- Ensure auth schema access for the function
 GRANT USAGE ON SCHEMA auth TO postgres;
 GRANT SELECT ON auth.users TO postgres;
-
--- Create storage buckets
--- Note: This is a placeholder as storage buckets are created in the Supabase dashboard
--- In a real implementation, you would create these buckets in the Supabase dashboard:
--- 1. avatars - For user profile pictures
--- 2. products - For product images
--- 3. verification - For student ID verification images
--- 4. chat-media - For chat images and media

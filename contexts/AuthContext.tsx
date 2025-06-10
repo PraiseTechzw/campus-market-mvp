@@ -86,21 +86,21 @@ export function AuthProvider({ children }: AuthProviderProps) {
       const { data: authUser } = await supabase.auth.getUser();
       if (!authUser.user) throw new Error('No authenticated user');
 
-      const { data, error } = await supabase
-        .from('users')
-        .insert({
-          id: userId,
-          email: authUser.user.email!,
-          name: authUser.user.user_metadata?.name || 'User',
-          is_verified: false,
-        })
-        .select()
-        .single();
+      // Use RPC function to bypass RLS policies for user creation
+      const { data, error } = await supabase.rpc('create_user_profile', {
+        user_id: userId,
+        user_email: authUser.user.email!,
+        user_name: authUser.user.user_metadata?.name || 'User',
+        is_user_verified: false
+      });
 
-      if (error) throw error;
+      if (error) {
+        console.error('RPC error creating user profile:', error);
+        throw error;
+      }
 
-      setUser(data);
-      await storage.setItem(CACHE_KEYS.USER_PROFILE, data);
+      // Fetch the newly created user profile
+      await fetchUserProfile(userId);
     } catch (error) {
       console.error('Error creating user profile:', error);
     }
@@ -136,8 +136,15 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
       if (error) throw error;
 
-      // The user profile will be created automatically by the database trigger
-      // when the user verifies their email and the auth.users record is confirmed
+      // Create user profile immediately after signup
+      if (data.user) {
+        try {
+          await createUserProfile(data.user.id);
+        } catch (profileError: any) {
+          console.error('Error creating user profile during signup:', profileError);
+          return { error: `Failed to create user profile: ${profileError.message}` };
+        }
+      }
 
       return {};
     } catch (error: any) {

@@ -1,14 +1,15 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl, AppState, AppStateStatus } from 'react-native';
 import { useRouter } from 'expo-router';
 import { MotiView } from 'moti';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { Card } from '@/components/ui/Card';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
-import { supabase } from '@/lib/supabase';
+import { NotificationService } from '@/lib/notifications';
 import { Notification } from '@/types';
 import { Ionicons } from '@expo/vector-icons';
+import Toast from 'react-native-toast-message';
 
 export default function NotificationsScreen() {
   const { colors } = useTheme();
@@ -18,23 +19,38 @@ export default function NotificationsScreen() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const subscription = useRef<{ unsubscribe: () => void } | null>(null);
+  const appState = useRef(AppState.currentState);
 
   useEffect(() => {
     if (user) {
       fetchNotifications();
+      subscribeToNotifications();
+      
+      // Listen for app state changes
+      const subscription = AppState.addEventListener('change', handleAppStateChange);
+      
+      return () => {
+        subscription.remove();
+        if (subscription.current) {
+          subscription.current.unsubscribe();
+        }
+      };
     }
   }, [user]);
 
+  const handleAppStateChange = (nextAppState: AppStateStatus) => {
+    if (appState.current.match(/inactive|background/) && nextAppState === 'active') {
+      // App has come to the foreground
+      fetchNotifications();
+    }
+    appState.current = nextAppState;
+  };
+
   const fetchNotifications = async () => {
     try {
-      const { data, error } = await supabase
-        .from('notifications')
-        .select('*')
-        .eq('user_id', user?.id)
-        .order('created_at', { ascending: false })
-        .limit(50);
-
-      if (error) throw error;
+      const { data, error } = await NotificationService.getNotifications(user?.id || '');
+      if (error) throw new Error(error);
       setNotifications(data || []);
     } catch (error) {
       console.error('Error fetching notifications:', error);
@@ -44,15 +60,33 @@ export default function NotificationsScreen() {
     }
   };
 
+  const subscribeToNotifications = () => {
+    if (!user) return;
+    
+    subscription.current = NotificationService.subscribeToNotifications(user.id, (newNotification) => {
+      setNotifications(prev => {
+        // Check if notification already exists
+        const exists = prev.some(n => n.id === newNotification.id);
+        if (exists) return prev;
+        
+        // Add new notification at the beginning
+        return [newNotification, ...prev];
+      });
+      
+      // Show local notification
+      NotificationService.sendLocalNotification(
+        newNotification.title,
+        newNotification.body,
+        newNotification.data
+      );
+    });
+  };
+
   const markAsRead = async (notificationId: string) => {
     try {
-      const { error } = await supabase
-        .from('notifications')
-        .update({ is_read: true })
-        .eq('id', notificationId);
-
-      if (error) throw error;
-
+      await NotificationService.markAsRead(notificationId);
+      
+      // Update local state
       setNotifications(prev => 
         prev.map(notif => 
           notif.id === notificationId 
@@ -67,17 +101,18 @@ export default function NotificationsScreen() {
 
   const markAllAsRead = async () => {
     try {
-      const { error } = await supabase
-        .from('notifications')
-        .update({ is_read: true })
-        .eq('user_id', user?.id)
-        .eq('is_read', false);
-
-      if (error) throw error;
-
+      await NotificationService.markAllAsRead(user?.id || '');
+      
+      // Update local state
       setNotifications(prev => 
         prev.map(notif => ({ ...notif, is_read: true }))
       );
+      
+      Toast.show({
+        type: 'success',
+        text1: 'All Marked as Read',
+        text2: 'All notifications have been marked as read',
+      });
     } catch (error) {
       console.error('Error marking all notifications as read:', error);
     }
@@ -86,6 +121,22 @@ export default function NotificationsScreen() {
   const onRefresh = () => {
     setRefreshing(true);
     fetchNotifications();
+  };
+
+  const handleNotificationPress = (notification: Notification) => {
+    // Mark as read
+    if (!notification.is_read) {
+      markAsRead(notification.id);
+    }
+    
+    // Handle navigation based on notification type
+    if (notification.type === 'message' && notification.data?.chatId) {
+      router.push(`/chat/${notification.data.chatId}`);
+    } else if (notification.type === 'product' && notification.data?.productId) {
+      router.push(`/product/${notification.data.productId}`);
+    } else if (notification.type === 'order' && notification.data?.orderId) {
+      router.push(`/order/${notification.data.orderId}`);
+    }
   };
 
   const getNotificationIcon = (type: string) => {
@@ -141,23 +192,10 @@ export default function NotificationsScreen() {
       transition={{ type: 'timing', delay: index * 100 }}
     >
       <TouchableOpacity
-        onPress={() => {
-          if (!item.is_read) {
-            markAsRead(item.id);
-          }
-          // Handle navigation based on notification type
-          if (item.type === 'message' && item.data?.chatId) {
-            router.push(`/chat/${item.data.chatId}`);
-          } else if (item.type === 'product' && item.data?.productId) {
-            router.push(`/product/${item.data.productId}`);
-          }
-        }}
+        onPress={() => handleNotificationPress(item)}
         activeOpacity={0.8}
       >
-        <Card style={[
-          styles.notificationItem,
-          !item.is_read && { backgroundColor: colors.primaryLight + '10' }
-        ]}>
+        <Card style={styles.notificationItem}>
           <View style={styles.notificationContent}>
             <View style={[styles.notificationIcon, { backgroundColor: getNotificationColor(item.type) }]}>
               <Ionicons 
@@ -168,7 +206,13 @@ export default function NotificationsScreen() {
             </View>
             
             <View style={styles.notificationDetails}>
-              <Text style={[styles.notificationTitle, { color: colors.text }]}>
+              <Text style={[
+                styles.notificationTitle, 
+                { 
+                  color: colors.text,
+                  fontWeight: item.is_read ? '600' : '700'
+                }
+              ]}>
                 {item.title}
               </Text>
               <Text style={[styles.notificationBody, { color: colors.textSecondary }]}>
@@ -308,6 +352,7 @@ const styles = StyleSheet.create({
   notificationContent: {
     flexDirection: 'row',
     alignItems: 'flex-start',
+    position: 'relative',
   },
   notificationIcon: {
     width: 40,
@@ -322,7 +367,6 @@ const styles = StyleSheet.create({
   },
   notificationTitle: {
     fontSize: 16,
-    fontWeight: '600',
     marginBottom: 4,
   },
   notificationBody: {
@@ -337,8 +381,9 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    marginLeft: 8,
-    marginTop: 8,
+    position: 'absolute',
+    top: 8,
+    right: 8,
   },
   emptyState: {
     flex: 1,

@@ -1,12 +1,12 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl, AppState, AppStateStatus } from 'react-native';
 import { useRouter } from 'expo-router';
 import { MotiView } from 'moti';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { Card } from '@/components/ui/Card';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
-import { supabase } from '@/lib/supabase';
+import { MessagingService } from '@/lib/messaging';
 import { Chat } from '@/types';
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'react-native';
@@ -19,28 +19,38 @@ export default function MessagesScreen() {
   const [chats, setChats] = useState<Chat[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const subscription = useRef<{ unsubscribe: () => void } | null>(null);
+  const appState = useRef(AppState.currentState);
 
   useEffect(() => {
     if (user) {
       fetchChats();
+      subscribeToChats();
+      
+      // Listen for app state changes to refresh chats when app comes to foreground
+      const subscription = AppState.addEventListener('change', handleAppStateChange);
+      
+      return () => {
+        subscription.remove();
+        if (subscription.current) {
+          subscription.current.unsubscribe();
+        }
+      };
     }
   }, [user]);
 
+  const handleAppStateChange = (nextAppState: AppStateStatus) => {
+    if (appState.current.match(/inactive|background/) && nextAppState === 'active') {
+      // App has come to the foreground
+      fetchChats();
+    }
+    appState.current = nextAppState;
+  };
+
   const fetchChats = async () => {
     try {
-      const { data, error } = await supabase
-        .from('chats')
-        .select(`
-          *,
-          buyer:users!buyer_id(*),
-          seller:users!seller_id(*),
-          product:products(*)
-        `)
-        .or(`buyer_id.eq.${user?.id},seller_id.eq.${user?.id}`)
-        .order('last_message_at', { ascending: false, nullsFirst: false })
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
+      const { data, error } = await MessagingService.getChats(user?.id || '');
+      if (error) throw new Error(error);
       setChats(data || []);
     } catch (error) {
       console.error('Error fetching chats:', error);
@@ -48,6 +58,43 @@ export default function MessagesScreen() {
       setLoading(false);
       setRefreshing(false);
     }
+  };
+
+  const subscribeToChats = () => {
+    if (!user) return;
+    
+    subscription.current = MessagingService.subscribeToChats(user.id, (updatedChat) => {
+      setChats(prevChats => {
+        // Find if chat already exists in the list
+        const chatIndex = prevChats.findIndex(chat => chat.id === updatedChat.id);
+        
+        if (chatIndex >= 0) {
+          // Update existing chat
+          const newChats = [...prevChats];
+          newChats[chatIndex] = {
+            ...newChats[chatIndex],
+            last_message: updatedChat.last_message,
+            last_message_at: updatedChat.last_message_at,
+            last_message_sender_id: updatedChat.last_message_sender_id,
+          };
+          
+          // Sort chats by last message time
+          return newChats.sort((a, b) => {
+            const aTime = a.last_message_at ? new Date(a.last_message_at).getTime() : 0;
+            const bTime = b.last_message_at ? new Date(b.last_message_at).getTime() : 0;
+            return bTime - aTime;
+          });
+        } else {
+          // Fetch the full chat details and add to list
+          MessagingService.getChatById(updatedChat.id).then(({ data }) => {
+            if (data) {
+              setChats(prev => [data, ...prev]);
+            }
+          });
+          return prevChats;
+        }
+      });
+    });
   };
 
   const onRefresh = () => {
@@ -72,6 +119,7 @@ export default function MessagesScreen() {
   const renderChatItem = ({ item, index }: { item: Chat; index: number }) => {
     const otherUser = item.buyer_id === user?.id ? item.seller : item.buyer;
     const isCurrentUserBuyer = item.buyer_id === user?.id;
+    const isUnread = item.last_message_sender_id !== user?.id && !item.is_read;
 
     return (
       <MotiView
@@ -83,7 +131,10 @@ export default function MessagesScreen() {
           onPress={() => router.push(`/chat/${item.id}`)}
           activeOpacity={0.8}
         >
-          <Card style={styles.chatItem}>
+          <Card style={[
+            styles.chatItem,
+            isUnread && { backgroundColor: colors.primaryLight + '10' }
+          ]}>
             <View style={styles.chatContent}>
               <View style={styles.productInfo}>
                 {item.product.images && item.product.images.length > 0 ? (
@@ -123,7 +174,16 @@ export default function MessagesScreen() {
                 </Text>
 
                 {item.last_message && (
-                  <Text style={[styles.lastMessage, { color: colors.textSecondary }]} numberOfLines={1}>
+                  <Text 
+                    style={[
+                      styles.lastMessage, 
+                      { 
+                        color: isUnread ? colors.text : colors.textSecondary,
+                        fontWeight: isUnread ? '600' : '400'
+                      }
+                    ]} 
+                    numberOfLines={1}
+                  >
                     {item.last_message}
                   </Text>
                 )}
@@ -137,6 +197,10 @@ export default function MessagesScreen() {
                   </Text>
                 </View>
               </View>
+              
+              {isUnread && (
+                <View style={[styles.unreadBadge, { backgroundColor: colors.primary }]} />
+              )}
             </View>
           </Card>
         </TouchableOpacity>
@@ -153,7 +217,10 @@ export default function MessagesScreen() {
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <View style={[styles.header, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
         <Text style={[styles.title, { color: colors.text }]}>Messages</Text>
-        <TouchableOpacity style={styles.searchButton}>
+        <TouchableOpacity 
+          style={styles.searchButton}
+          onPress={() => router.push('/(tabs)/search')}
+        >
           <Ionicons name="search" size={24} color={colors.text} />
         </TouchableOpacity>
       </View>
@@ -223,6 +290,7 @@ const styles = StyleSheet.create({
   },
   chatContent: {
     flexDirection: 'row',
+    position: 'relative',
   },
   productInfo: {
     marginRight: 12,
@@ -295,6 +363,14 @@ const styles = StyleSheet.create({
   productPrice: {
     fontSize: 14,
     fontWeight: '700',
+  },
+  unreadBadge: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    position: 'absolute',
+    top: 8,
+    right: 8,
   },
   emptyState: {
     flex: 1,
