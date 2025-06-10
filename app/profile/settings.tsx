@@ -1,13 +1,14 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch, Alert } from 'react-native';
-import { useRouter } from 'expo-router';
-import { MotiView } from 'moti';
+import { Button } from '@/components/ui/Button';
+import { Card } from '@/components/ui/Card';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
-import { Card } from '@/components/ui/Card';
-import { Button } from '@/components/ui/Button';
 import { supabase } from '@/lib/supabase';
+import { CATEGORIES } from '@/types';
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
+import { MotiView } from 'moti';
+import React, { useEffect, useState } from 'react';
+import { Alert, ScrollView, StyleSheet, Switch, Text, TouchableOpacity, View } from 'react-native';
 import Toast from 'react-native-toast-message';
 
 interface UserPreferences {
@@ -15,6 +16,7 @@ interface UserPreferences {
   email_notifications: boolean;
   push_notifications: boolean;
   preferred_categories: string[];
+  marketing_emails: boolean;
 }
 
 export default function SettingsScreen() {
@@ -27,9 +29,11 @@ export default function SettingsScreen() {
     email_notifications: true,
     push_notifications: true,
     preferred_categories: [],
+    marketing_emails: false,
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [showCategorySelector, setShowCategorySelector] = useState(false);
 
   useEffect(() => {
     if (user) {
@@ -45,9 +49,7 @@ export default function SettingsScreen() {
         .eq('user_id', user?.id)
         .single();
 
-      if (error && error.code !== 'PGRST116') {
-        throw error;
-      }
+      if (error && error.code !== 'PGRST116') throw error;
 
       if (data) {
         setPreferences({
@@ -55,6 +57,7 @@ export default function SettingsScreen() {
           email_notifications: data.email_notifications,
           push_notifications: data.push_notifications,
           preferred_categories: data.preferred_categories || [],
+          marketing_emails: data.marketing_emails,
         });
       }
     } catch (error) {
@@ -94,6 +97,14 @@ export default function SettingsScreen() {
     } finally {
       setSaving(false);
     }
+  };
+
+  const toggleCategory = (category: string) => {
+    const newCategories = preferences.preferred_categories.includes(category)
+      ? preferences.preferred_categories.filter(c => c !== category)
+      : [...preferences.preferred_categories, category];
+    
+    updatePreferences({ preferred_categories: newCategories });
   };
 
   const handleClearCache = async () => {
@@ -141,6 +152,7 @@ export default function SettingsScreen() {
               email_notifications: true,
               push_notifications: true,
               preferred_categories: [],
+              marketing_emails: false,
             };
             updatePreferences(defaultPreferences);
           }
@@ -222,6 +234,77 @@ export default function SettingsScreen() {
             </TouchableOpacity>
           </Card>
 
+          {/* Preferences */}
+          <Card style={styles.settingsCard}>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>
+              Preferences
+            </Text>
+            
+            <TouchableOpacity 
+              style={styles.settingItem}
+              onPress={() => setShowCategorySelector(!showCategorySelector)}
+            >
+              <View style={styles.settingLeft}>
+                <View style={[styles.settingIcon, { backgroundColor: colors.success }]}>
+                  <Ionicons name="list" size={20} color="#FFFFFF" />
+                </View>
+                <View style={styles.settingContent}>
+                  <Text style={[styles.settingTitle, { color: colors.text }]}>
+                    Preferred Categories
+                  </Text>
+                  <Text style={[styles.settingSubtitle, { color: colors.textSecondary }]}>
+                    {preferences.preferred_categories.length > 0 
+                      ? `${preferences.preferred_categories.length} categories selected` 
+                      : 'Select categories you are interested in'}
+                  </Text>
+                </View>
+              </View>
+              <Ionicons 
+                name={showCategorySelector ? "chevron-up" : "chevron-down"} 
+                size={20} 
+                color={colors.textTertiary} 
+              />
+            </TouchableOpacity>
+
+            {showCategorySelector && (
+              <MotiView
+                from={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                transition={{ type: 'timing', duration: 300 }}
+                style={styles.categoriesContainer}
+              >
+                <View style={styles.categoriesGrid}>
+                  {CATEGORIES.map((category) => (
+                    <TouchableOpacity
+                      key={category}
+                      style={[
+                        styles.categoryChip,
+                        { 
+                          backgroundColor: preferences.preferred_categories.includes(category) 
+                            ? colors.primary 
+                            : colors.surface,
+                          borderColor: colors.border,
+                        }
+                      ]}
+                      onPress={() => toggleCategory(category)}
+                    >
+                      <Text style={[
+                        styles.categoryText,
+                        { 
+                          color: preferences.preferred_categories.includes(category) 
+                            ? '#FFFFFF' 
+                            : colors.text 
+                        }
+                      ]}>
+                        {category}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </MotiView>
+            )}
+          </Card>
+
           {/* Notification Settings */}
           <Card style={styles.settingsCard}>
             <Text style={[styles.sectionTitle, { color: colors.text }]}>
@@ -273,6 +356,29 @@ export default function SettingsScreen() {
                 disabled={saving || !preferences.notifications_enabled}
               />
             </View>
+
+            <View style={styles.settingItem}>
+              <View style={styles.settingLeft}>
+                <View style={[styles.settingIcon, { backgroundColor: colors.error }]}>
+                  <Ionicons name="mail-open" size={20} color="#FFFFFF" />
+                </View>
+                <View style={styles.settingContent}>
+                  <Text style={[styles.settingTitle, { color: colors.text }]}>
+                    Marketing Emails
+                  </Text>
+                  <Text style={[styles.settingSubtitle, { color: colors.textSecondary }]}>
+                    Receive promotional emails and newsletters
+                  </Text>
+                </View>
+              </View>
+              <Switch
+                value={preferences.marketing_emails}
+                onValueChange={(value) => updatePreferences({ marketing_emails: value })}
+                trackColor={{ false: colors.border, true: colors.primary }}
+                thumbColor="#FFFFFF"
+                disabled={saving}
+              />
+            </View>
           </Card>
 
           {/* Privacy & Security */}
@@ -306,15 +412,15 @@ export default function SettingsScreen() {
               onPress={() => router.push('/profile/verification')}
             >
               <View style={styles.settingLeft}>
-                <View style={[styles.settingIcon, { backgroundColor: user.is_verified ? colors.success : colors.warning }]}>
-                  <Ionicons name={user.is_verified ? "checkmark-circle" : "time"} size={20} color="#FFFFFF" />
+                <View style={[styles.settingIcon, { backgroundColor: user?.is_verified ? colors.success : colors.warning }]}>
+                  <Ionicons name={user?.is_verified ? "checkmark-circle" : "time"} size={20} color="#FFFFFF" />
                 </View>
                 <View style={styles.settingContent}>
                   <Text style={[styles.settingTitle, { color: colors.text }]}>
                     Account Verification
                   </Text>
                   <Text style={[styles.settingSubtitle, { color: colors.textSecondary }]}>
-                    {user.is_verified ? 'Verified student account' : 'Verify your student status'}
+                    {user?.is_verified ? 'Verified student account' : 'Verify your student status'}
                   </Text>
                 </View>
               </View>
@@ -535,6 +641,25 @@ const styles = StyleSheet.create({
   },
   settingSubtitle: {
     fontSize: 14,
+  },
+  categoriesContainer: {
+    paddingTop: 12,
+    paddingBottom: 8,
+  },
+  categoriesGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  categoryChip: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+  },
+  categoryText: {
+    fontSize: 12,
+    fontWeight: '500',
   },
   accountActions: {
     marginVertical: 20,

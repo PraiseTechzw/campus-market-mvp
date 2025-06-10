@@ -1,16 +1,14 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Switch, RefreshControl } from 'react-native';
-import { useRouter } from 'expo-router';
-import { MotiView } from 'moti';
+import { Button } from '@/components/ui/Button';
+import { Card } from '@/components/ui/Card';
+import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
-import { Card } from '@/components/ui/Card';
-import { Button } from '@/components/ui/Button';
-import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { supabase } from '@/lib/supabase';
-import { NotificationService } from '@/lib/notifications';
 import { Ionicons } from '@expo/vector-icons';
-import { Image } from 'react-native';
+import { useRouter } from 'expo-router';
+import { MotiView } from 'moti';
+import React, { useEffect, useState } from 'react';
+import { Alert, Image, RefreshControl, ScrollView, StyleSheet, Switch, Text, TouchableOpacity, View } from 'react-native';
 import Toast from 'react-native-toast-message';
 
 interface ProfileStats {
@@ -22,6 +20,8 @@ interface ProfileStats {
   averageRating: number;
   totalReviews: number;
   joinedDaysAgo: number;
+  unreadMessages: number;
+  unreadNotifications: number;
 }
 
 export default function ProfileScreen() {
@@ -38,19 +38,64 @@ export default function ProfileScreen() {
     averageRating: 0,
     totalReviews: 0,
     joinedDaysAgo: 0,
+    unreadMessages: 0,
+    unreadNotifications: 0,
   });
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
-  const [unreadNotifications, setUnreadNotifications] = useState(0);
+  const [verificationStatus, setVerificationStatus] = useState<{
+    is_verified: boolean;
+    verification_status: string;
+    email_verified: boolean;
+    profile_complete: boolean;
+  }>({
+    is_verified: false,
+    verification_status: 'pending',
+    email_verified: false,
+    profile_complete: false,
+  });
 
   useEffect(() => {
     if (user) {
       fetchProfileStats();
-      fetchNotificationPreferences();
-      fetchUnreadNotificationCount();
+      fetchVerificationStatus();
+      fetchUserPreferences();
     }
   }, [user]);
+
+  const fetchVerificationStatus = async () => {
+    try {
+      const { data, error } = await supabase.rpc('get_user_verification_status', {
+        user_id: user?.id
+      });
+      
+      if (error) throw error;
+      if (data) {
+        setVerificationStatus(data);
+      }
+    } catch (error) {
+      console.error('Error fetching verification status:', error);
+    }
+  };
+
+  const fetchUserPreferences = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('user_preferences')
+        .select('notifications_enabled')
+        .eq('user_id', user?.id)
+        .single();
+
+      if (error && error.code !== 'PGRST116') throw error;
+      
+      if (data) {
+        setNotificationsEnabled(data.notifications_enabled);
+      }
+    } catch (error) {
+      console.error('Error fetching user preferences:', error);
+    }
+  };
 
   const fetchProfileStats = async () => {
     if (!user) return;
@@ -80,6 +125,22 @@ export default function ProfileScreen() {
 
       if (ordersError) throw ordersError;
 
+      // Fetch unread message count
+      const { data: unreadMessages, error: messagesError } = await supabase.rpc(
+        'get_unread_message_count',
+        { user_id: user.id }
+      );
+      
+      if (messagesError) throw messagesError;
+
+      // Fetch unread notification count
+      const { data: unreadNotifications, error: notificationsError } = await supabase.rpc(
+        'get_unread_notification_count',
+        { user_id: user.id }
+      );
+      
+      if (notificationsError) throw notificationsError;
+
       // Calculate stats
       const totalProducts = products?.length || 0;
       const soldProducts = products?.filter(p => p.is_sold).length || 0;
@@ -95,50 +156,27 @@ export default function ProfileScreen() {
         averageRating: 4.8, // Mock data - would come from reviews table
         totalReviews: 24, // Mock data - would come from reviews table
         joinedDaysAgo,
+        unreadMessages: unreadMessages || 0,
+        unreadNotifications: unreadNotifications || 0,
       });
     } catch (error) {
       console.error('Error fetching profile stats:', error);
+      Toast.show({
+        type: 'error',
+        text1: 'Error',
+        text2: 'Failed to load profile data',
+      });
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
   };
 
-  const fetchNotificationPreferences = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('user_preferences')
-        .select('notifications_enabled')
-        .eq('user_id', user?.id)
-        .single();
-
-      if (error && error.code !== 'PGRST116') throw error;
-      
-      if (data) {
-        setNotificationsEnabled(data.notifications_enabled);
-      }
-    } catch (error) {
-      console.error('Error fetching notification preferences:', error);
-    }
-  };
-
-  const fetchUnreadNotificationCount = async () => {
-    if (!user) return;
-    
-    try {
-      const { count, error } = await NotificationService.getUnreadCount(user.id);
-      if (error) throw new Error(error);
-      setUnreadNotifications(count);
-    } catch (error) {
-      console.error('Error fetching unread notification count:', error);
-    }
-  };
-
   const onRefresh = () => {
     setRefreshing(true);
     fetchProfileStats();
-    fetchNotificationPreferences();
-    fetchUnreadNotificationCount();
+    fetchVerificationStatus();
+    fetchUserPreferences();
   };
 
   const handleSignOut = () => {
@@ -193,6 +231,66 @@ export default function ProfileScreen() {
     return 'System';
   };
 
+  const getVerificationStatusText = () => {
+    if (verificationStatus.is_verified) {
+      return 'Verified student';
+    }
+    
+    if (!verificationStatus.email_verified) {
+      return 'Email verification required';
+    }
+    
+    if (verificationStatus.verification_status === 'pending') {
+      return 'Verification pending';
+    }
+    
+    if (verificationStatus.verification_status === 'rejected') {
+      return 'Verification rejected';
+    }
+    
+    return 'Verify your student status';
+  };
+
+  const getVerificationIcon = () => {
+    if (verificationStatus.is_verified) {
+      return 'checkmark-circle';
+    }
+    
+    if (!verificationStatus.email_verified) {
+      return 'mail';
+    }
+    
+    if (verificationStatus.verification_status === 'pending') {
+      return 'time';
+    }
+    
+    if (verificationStatus.verification_status === 'rejected') {
+      return 'close-circle';
+    }
+    
+    return 'shield-checkmark';
+  };
+
+  const getVerificationColor = () => {
+    if (verificationStatus.is_verified) {
+      return colors.success;
+    }
+    
+    if (!verificationStatus.email_verified) {
+      return colors.error;
+    }
+    
+    if (verificationStatus.verification_status === 'pending') {
+      return colors.warning;
+    }
+    
+    if (verificationStatus.verification_status === 'rejected') {
+      return colors.error;
+    }
+    
+    return colors.warning;
+  };
+
   if (!user) {
     router.replace('/(auth)');
     return null;
@@ -213,12 +311,12 @@ export default function ProfileScreen() {
           onPress: () => router.push('/profile/edit'),
         },
         {
-          icon: 'shield-checkmark',
+          icon: getVerificationIcon(),
           title: 'Verification',
-          subtitle: user.is_verified ? 'Verified student' : 'Verify your student status',
+          subtitle: getVerificationStatusText(),
           onPress: () => router.push('/profile/verification'),
-          badge: user.is_verified ? '✓' : undefined,
-          badgeColor: user.is_verified ? colors.success : colors.warning,
+          badge: verificationStatus.is_verified ? '✓' : undefined,
+          badgeColor: getVerificationColor(),
         },
         {
           icon: 'lock-closed',
@@ -276,8 +374,6 @@ export default function ProfileScreen() {
               thumbColor="#FFFFFF"
             />
           ),
-          badge: unreadNotifications > 0 ? unreadNotifications.toString() : undefined,
-          badgeColor: colors.primary,
         },
         {
           icon: getThemeIcon(),
@@ -375,7 +471,7 @@ export default function ProfileScreen() {
                   <Text style={[styles.userName, { color: colors.text }]}>
                     {user.name}
                   </Text>
-                  {user.is_verified && (
+                  {verificationStatus.is_verified && (
                     <View style={[styles.verifiedBadge, { backgroundColor: colors.primary }]}>
                       <Ionicons name="checkmark" size={12} color="#FFFFFF" />
                     </View>
@@ -396,6 +492,40 @@ export default function ProfileScreen() {
               <Ionicons name="chevron-forward" size={20} color={colors.textTertiary} />
             </TouchableOpacity>
           </Card>
+
+          {/* Verification Alert */}
+          {!verificationStatus.is_verified && (
+            <MotiView
+              from={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              transition={{ type: 'timing', duration: 500 }}
+            >
+              <Card style={[styles.verificationCard, { borderColor: getVerificationColor() }]}>
+                <View style={styles.verificationContent}>
+                  <View style={[styles.verificationIcon, { backgroundColor: getVerificationColor() }]}>
+                    <Ionicons name={getVerificationIcon() as any} size={24} color="#FFFFFF" />
+                  </View>
+                  <View style={styles.verificationInfo}>
+                    <Text style={[styles.verificationTitle, { color: colors.text }]}>
+                      {!verificationStatus.email_verified 
+                        ? 'Email Verification Required' 
+                        : 'Complete Your Verification'}
+                    </Text>
+                    <Text style={[styles.verificationText, { color: colors.textSecondary }]}>
+                      {!verificationStatus.email_verified 
+                        ? 'Please verify your email to access all features' 
+                        : 'Verify your student status to build trust with other users'}
+                    </Text>
+                  </View>
+                </View>
+                <Button
+                  title={!verificationStatus.email_verified ? "Verify Email" : "Complete Verification"}
+                  onPress={() => router.push('/profile/verification')}
+                  style={[styles.verificationButton, { backgroundColor: getVerificationColor() }]}
+                />
+              </Card>
+            </MotiView>
+          )}
 
           {/* Stats Cards */}
           <View style={styles.statsContainer}>
@@ -610,6 +740,39 @@ const styles = StyleSheet.create({
   },
   memberSince: {
     fontSize: 12,
+  },
+  verificationCard: {
+    marginBottom: 20,
+    borderLeftWidth: 4,
+    paddingVertical: 12,
+  },
+  verificationContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  verificationIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  verificationInfo: {
+    flex: 1,
+  },
+  verificationTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  verificationText: {
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  verificationButton: {
+    marginTop: 4,
   },
   statsContainer: {
     flexDirection: 'row',

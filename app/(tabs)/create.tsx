@@ -9,9 +9,11 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
 import { MotiView } from 'moti';
-import React, { useState } from 'react';
-import { Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { Dimensions, Image, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Toast from 'react-native-toast-message';
+
+const { width } = Dimensions.get('window');
 
 interface ProductFormData {
   title: string;
@@ -19,6 +21,7 @@ interface ProductFormData {
   price: string;
   category: string;
   condition: 'new' | 'used';
+  location: string;
   // Category-specific fields
   brand?: string;
   model?: string;
@@ -94,12 +97,26 @@ export default function CreateScreen() {
     price: '',
     category: '',
     condition: 'used',
+    location: '',
   });
   const [images, setImages] = useState<string[]>([]);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [specifications, setSpecifications] = useState<Record<string, string>>({});
 
   const totalSteps = 4;
+
+  useEffect(() => {
+    // Pre-fill location if user has a university
+    if (user?.university) {
+      setFormData(prev => ({
+        ...prev,
+        location: user.university
+      }));
+    }
+  }, [user]);
 
   const pickImage = async () => {
     const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -114,14 +131,23 @@ export default function CreateScreen() {
     }
 
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ["images"],
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsEditing: true,
       aspect: [1, 1],
       quality: 0.8,
+      allowsMultipleSelection: true,
+      selectionLimit: 5,
     });
 
-    if (!result.canceled && result.assets[0]) {
-      setImages([...images, result.assets[0].uri]);
+    if (!result.canceled && result.assets.length > 0) {
+      // Limit to 5 images total
+      const newImages = [...images];
+      result.assets.forEach(asset => {
+        if (newImages.length < 5) {
+          newImages.push(asset.uri);
+        }
+      });
+      setImages(newImages);
     }
   };
 
@@ -144,7 +170,16 @@ export default function CreateScreen() {
     });
 
     if (!result.canceled && result.assets[0]) {
-      setImages([...images, result.assets[0].uri]);
+      // Limit to 5 images total
+      if (images.length < 5) {
+        setImages([...images, result.assets[0].uri]);
+      } else {
+        Toast.show({
+          type: 'info',
+          text1: 'Maximum Images',
+          text2: 'You can only add up to 5 images',
+        });
+      }
     }
   };
 
@@ -159,16 +194,27 @@ export default function CreateScreen() {
       case 1:
         if (!formData.title.trim()) {
           newErrors.title = 'Title is required';
+        } else if (formData.title.length < 5) {
+          newErrors.title = 'Title must be at least 5 characters';
         }
+        
         if (!formData.description.trim()) {
           newErrors.description = 'Description is required';
+        } else if (formData.description.length < 20) {
+          newErrors.description = 'Description must be at least 20 characters';
+        }
+        
+        if (!formData.location.trim()) {
+          newErrors.location = 'Location is required';
         }
         break;
+        
       case 2:
         if (!formData.category) {
           newErrors.category = 'Please select a category';
         }
         break;
+        
       case 3:
         if (!formData.price || isNaN(Number(formData.price)) || Number(formData.price) <= 0) {
           newErrors.price = 'Please enter a valid price';
@@ -177,11 +223,12 @@ export default function CreateScreen() {
         // Validate category-specific required fields
         const categoryFields = CATEGORY_FIELDS[formData.category] || [];
         categoryFields.forEach(field => {
-          if (field.required && !formData[field.key]) {
+          if (field.required && !specifications[field.key]) {
             newErrors[field.key] = `${field.label} is required`;
           }
         });
         break;
+        
       case 4:
         if (images.length === 0) {
           newErrors.images = 'Please add at least one image';
@@ -196,11 +243,15 @@ export default function CreateScreen() {
   const handleNext = () => {
     if (validateStep(currentStep)) {
       setCurrentStep(currentStep + 1);
+      // Scroll to top when moving to next step
+      window.scrollTo(0, 0);
     }
   };
 
   const handleBack = () => {
     setCurrentStep(currentStep - 1);
+    // Scroll to top when moving to previous step
+    window.scrollTo(0, 0);
   };
 
   const handleSubmit = async () => {
@@ -208,38 +259,55 @@ export default function CreateScreen() {
     if (!user) return;
 
     setLoading(true);
+    setProgress(0);
     
     try {
       // For demo purposes, we'll use placeholder images from Pexels
-      const placeholderImages = [
-        'https://images.pexels.com/photos/90946/pexels-photo-90946.jpeg?auto=compress&cs=tinysrgb&w=400',
-        'https://images.pexels.com/photos/276517/pexels-photo-276517.jpeg?auto=compress&cs=tinysrgb&w=400',
-        'https://images.pexels.com/photos/159711/books-bookstore-book-reading-159711.jpeg?auto=compress&cs=tinysrgb&w=400'
-      ];
+      // In a real app, you'd upload the images to storage
+      let productImages = images;
+      
+      if (images.length === 0) {
+        // Use placeholder images if none provided
+        productImages = [
+          'https://images.pexels.com/photos/90946/pexels-photo-90946.jpeg?auto=compress&cs=tinysrgb&w=400'
+        ];
+      }
+
+      // Simulate upload progress
+      setUploading(true);
+      for (let i = 0; i <= 100; i += 10) {
+        setProgress(i);
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+      setUploading(false);
 
       // Prepare specifications object
-      const specifications: Record<string, any> = {};
+      const productSpecifications: Record<string, any> = {};
       const categoryFields = CATEGORY_FIELDS[formData.category] || [];
       categoryFields.forEach(field => {
-        if (formData[field.key]) {
-          specifications[field.key] = formData[field.key];
+        if (specifications[field.key]) {
+          productSpecifications[field.key] = specifications[field.key];
         }
       });
 
       // Create product
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('products')
         .insert({
           title: formData.title.trim(),
           description: formData.description.trim(),
           price: Number(formData.price),
           category: formData.category,
+          category_id: formData.category.toLowerCase().replace(/\s+/g, '_'),
           condition: formData.condition,
-          images: placeholderImages,
-          specifications: specifications,
+          images: productImages,
+          specifications: productSpecifications,
           seller_id: user.id,
           is_sold: false,
-        });
+          location: formData.location,
+          tags: generateTags(),
+        })
+        .select();
 
       if (error) throw error;
 
@@ -251,6 +319,7 @@ export default function CreateScreen() {
 
       router.replace('/(tabs)');
     } catch (error: any) {
+      console.error('Error creating product:', error);
       Toast.show({
         type: 'error',
         text1: 'Error',
@@ -258,7 +327,32 @@ export default function CreateScreen() {
       });
     } finally {
       setLoading(false);
+      setUploading(false);
     }
+  };
+
+  const generateTags = () => {
+    const tags = [
+      formData.title,
+      formData.category,
+      formData.condition,
+      formData.location,
+    ];
+    
+    // Add specifications to tags
+    Object.values(specifications).forEach(value => {
+      if (value) tags.push(value);
+    });
+    
+    // Filter out empty values and return unique tags
+    return [...new Set(tags.filter(tag => tag))];
+  };
+
+  const handleSpecificationChange = (key: string, value: string) => {
+    setSpecifications(prev => ({
+      ...prev,
+      [key]: value
+    }));
   };
 
   const renderStepContent = () => {
@@ -280,7 +374,7 @@ export default function CreateScreen() {
                 value={formData.title}
                 onChangeText={(text) => setFormData({ ...formData, title: text })}
                 error={errors.title}
-                leftIcon={<Ionicons name="text\" size={20} color={colors.textTertiary} />}
+                leftIcon={<Ionicons name="text" size={20} color={colors.textTertiary} />}
               />
 
               <Input
@@ -291,9 +385,31 @@ export default function CreateScreen() {
                 multiline
                 numberOfLines={4}
                 error={errors.description}
-                leftIcon={<Ionicons name="document-text\" size={20} color={colors.textTertiary} />}
+                leftIcon={<Ionicons name="document-text" size={20} color={colors.textTertiary} />}
                 style={{ height: 100, textAlignVertical: 'top' }}
               />
+
+              <Input
+                label="Location *"
+                placeholder="Where is the item located?"
+                value={formData.location}
+                onChangeText={(text) => setFormData({ ...formData, location: text })}
+                error={errors.location}
+                leftIcon={<Ionicons name="location" size={20} color={colors.textTertiary} />}
+              />
+            </View>
+
+            <View style={styles.tipContainer}>
+              <View style={styles.tipHeader}>
+                <Ionicons name="bulb" size={20} color={colors.warning} />
+                <Text style={[styles.tipTitle, { color: colors.text }]}>Listing Tips</Text>
+              </View>
+              <Text style={[styles.tipText, { color: colors.textSecondary }]}>
+                • Use a clear, descriptive title{'\n'}
+                • Include all relevant details in the description{'\n'}
+                • Be honest about the condition{'\n'}
+                • Mention any defects or issues
+              </Text>
             </View>
           </Card>
         );
@@ -374,6 +490,15 @@ export default function CreateScreen() {
                   ))}
                 </View>
               </View>
+
+              <View style={styles.categoryInfoContainer}>
+                <Text style={[styles.categoryInfoTitle, { color: colors.text }]}>
+                  {formData.category ? `About ${formData.category}` : 'Select a Category'}
+                </Text>
+                <Text style={[styles.categoryInfoText, { color: colors.textSecondary }]}>
+                  {getCategoryDescription(formData.category)}
+                </Text>
+              </View>
             </View>
           </Card>
         );
@@ -397,10 +522,10 @@ export default function CreateScreen() {
                 onChangeText={(text) => setFormData({ ...formData, price: text })}
                 keyboardType="numeric"
                 error={errors.price}
-                leftIcon={<Ionicons name="cash\" size={20} color={colors.textTertiary} />}
+                leftIcon={<Ionicons name="cash" size={20} color={colors.textTertiary} />}
               />
 
-              {categoryFields.length > 0 && (
+              {formData.category && categoryFields.length > 0 && (
                 <>
                   <Text style={[styles.specificationsTitle, { color: colors.text }]}>
                     {formData.category} Specifications
@@ -410,13 +535,26 @@ export default function CreateScreen() {
                       key={field.key}
                       label={`${field.label}${field.required ? ' *' : ''}`}
                       placeholder={field.placeholder}
-                      value={formData[field.key] || ''}
-                      onChangeText={(text) => setFormData({ ...formData, [field.key]: text })}
+                      value={specifications[field.key] || ''}
+                      onChangeText={(text) => handleSpecificationChange(field.key, text)}
                       error={errors[field.key]}
                     />
                   ))}
                 </>
               )}
+
+              <View style={styles.pricingTipsContainer}>
+                <View style={styles.tipHeader}>
+                  <Ionicons name="pricetag" size={20} color={colors.primary} />
+                  <Text style={[styles.tipTitle, { color: colors.text }]}>Pricing Tips</Text>
+                </View>
+                <Text style={[styles.tipText, { color: colors.textSecondary }]}>
+                  • Research similar items to set a competitive price{'\n'}
+                  • Consider the condition when pricing{'\n'}
+                  • Be open to negotiation{'\n'}
+                  • Include any accessories in the price
+                </Text>
+              </View>
             </View>
           </Card>
         );
@@ -454,7 +592,7 @@ export default function CreateScreen() {
                   </TouchableOpacity>
                 </View>
                 
-                {images.length > 0 && (
+                {images.length > 0 ? (
                   <View style={styles.imagePreview}>
                     {images.map((uri, index) => (
                       <View key={index} style={styles.imageContainer}>
@@ -465,8 +603,23 @@ export default function CreateScreen() {
                         >
                           <Ionicons name="close" size={16} color="#FFFFFF" />
                         </TouchableOpacity>
+                        {index === 0 && (
+                          <View style={[styles.primaryBadge, { backgroundColor: colors.primary }]}>
+                            <Text style={styles.primaryBadgeText}>Primary</Text>
+                          </View>
+                        )}
                       </View>
                     ))}
+                  </View>
+                ) : (
+                  <View style={[styles.emptyImageContainer, { borderColor: colors.border }]}>
+                    <Ionicons name="images" size={48} color={colors.textTertiary} />
+                    <Text style={[styles.emptyImageText, { color: colors.textSecondary }]}>
+                      Add up to 5 images
+                    </Text>
+                    <Text style={[styles.emptyImageSubtext, { color: colors.textTertiary }]}>
+                      The first image will be the cover image
+                    </Text>
                   </View>
                 )}
               </View>
@@ -475,6 +628,19 @@ export default function CreateScreen() {
                   {errors.images}
                 </Text>
               )}
+
+              <View style={styles.imageTipsContainer}>
+                <View style={styles.tipHeader}>
+                  <Ionicons name="camera" size={20} color={colors.info} />
+                  <Text style={[styles.tipTitle, { color: colors.text }]}>Photo Tips</Text>
+                </View>
+                <Text style={[styles.tipText, { color: colors.textSecondary }]}>
+                  • Take photos in good lighting{'\n'}
+                  • Show the item from multiple angles{'\n'}
+                  • Include close-ups of any details or defects{'\n'}
+                  • Use a neutral background
+                </Text>
+              </View>
             </View>
           </Card>
         );
@@ -484,70 +650,307 @@ export default function CreateScreen() {
     }
   };
 
+  const getCategoryDescription = (category: string) => {
+    switch(category) {
+      case 'Electronics':
+        return 'Phones, laptops, tablets, cameras, headphones, and other electronic devices.';
+      case 'Books':
+        return 'Textbooks, novels, academic materials, study guides, and other reading materials.';
+      case 'Fashion':
+        return 'Clothing, shoes, accessories, bags, and other fashion items.';
+      case 'Services':
+        return 'Tutoring, repairs, design work, and other services offered to fellow students.';
+      case 'Furniture':
+        return 'Desks, chairs, beds, shelves, and other furniture for dorms or apartments.';
+      case 'Sports':
+        return 'Sports equipment, gym gear, bicycles, and other athletic items.';
+      case 'Beauty':
+        return 'Cosmetics, skincare, haircare, and other beauty products.';
+      case 'Food':
+        return 'Meal plans, snacks, kitchen appliances, and other food-related items.';
+      case 'Other':
+        return 'Items that don\'t fit into the other categories.';
+      default:
+        return 'Select a category to see more information.';
+    }
+  };
+
+  const renderProgressBar = () => (
+    <View style={styles.progressContainer}>
+      <View style={styles.progressBar}>
+        <View style={[
+          styles.progressFill, 
+          { 
+            backgroundColor: colors.primary, 
+            width: `${(currentStep / totalSteps) * 100}%` 
+          }
+        ]} />
+      </View>
+      <View style={styles.progressSteps}>
+        {[...Array(totalSteps)].map((_, index) => (
+          <View 
+            key={index}
+            style={[
+              styles.progressStep,
+              { 
+                backgroundColor: index < currentStep ? colors.primary : colors.border,
+                width: index < currentStep ? 24 : 8
+              }
+            ]}
+          />
+        ))}
+      </View>
+      <Text style={[styles.progressText, { color: colors.textSecondary }]}>
+        Step {currentStep} of {totalSteps}
+      </Text>
+    </View>
+  );
+
+  const renderStepIndicator = () => (
+    <View style={styles.stepIndicator}>
+      {[...Array(totalSteps)].map((_, index) => {
+        const stepNumber = index + 1;
+        const isActive = currentStep === stepNumber;
+        const isCompleted = currentStep > stepNumber;
+        
+        return (
+          <TouchableOpacity 
+            key={index}
+            style={[
+              styles.stepDot,
+              { 
+                backgroundColor: isActive || isCompleted ? colors.primary : colors.border,
+                width: isActive ? 32 : 24,
+                height: isActive ? 32 : 24,
+              }
+            ]}
+            onPress={() => {
+              // Allow going back to previous steps
+              if (stepNumber < currentStep) {
+                setCurrentStep(stepNumber);
+              }
+              // Allow going to completed steps
+              else if (isCompleted) {
+                setCurrentStep(stepNumber);
+              }
+            }}
+          >
+            {isCompleted ? (
+              <Ionicons name="checkmark" size={16} color="#FFFFFF" />
+            ) : (
+              <Text style={styles.stepNumber}>{stepNumber}</Text>
+            )}
+          </TouchableOpacity>
+        );
+      })}
+    </View>
+  );
+
+  const renderUploadProgress = () => (
+    <View style={styles.uploadProgressContainer}>
+      <Text style={[styles.uploadingText, { color: colors.text }]}>
+        Uploading images...
+      </Text>
+      <View style={[styles.progressBarContainer, { backgroundColor: colors.border }]}>
+        <View 
+          style={[
+            styles.progressBarFill, 
+            { 
+              backgroundColor: colors.primary,
+              width: `${progress}%` 
+            }
+          ]} 
+        />
+      </View>
+      <Text style={[styles.progressPercentage, { color: colors.textSecondary }]}>
+        {progress}%
+      </Text>
+    </View>
+  );
+
+  const renderPreview = () => {
+    if (currentStep !== 4) return null;
+    
+    return (
+      <Card style={styles.previewCard}>
+        <Text style={[styles.previewTitle, { color: colors.text }]}>
+          Preview
+        </Text>
+        
+        <View style={styles.previewContent}>
+          <View style={styles.previewImageContainer}>
+            {images.length > 0 ? (
+              <Image 
+                source={{ uri: images[0] }} 
+                style={styles.previewImage}
+                resizeMode="cover"
+              />
+            ) : (
+              <View style={[styles.previewImagePlaceholder, { backgroundColor: colors.border }]}>
+                <Ionicons name="image" size={32} color={colors.textTertiary} />
+              </View>
+            )}
+            <View style={[styles.previewBadge, { backgroundColor: formData.condition === 'new' ? colors.success : colors.warning }]}>
+              <Text style={styles.previewBadgeText}>
+                {formData.condition === 'new' ? 'NEW' : 'USED'}
+              </Text>
+            </View>
+          </View>
+          
+          <View style={styles.previewDetails}>
+            <Text style={[styles.previewProductTitle, { color: colors.text }]} numberOfLines={1}>
+              {formData.title || 'Product Title'}
+            </Text>
+            <Text style={[styles.previewPrice, { color: colors.primary }]}>
+              ${formData.price || '0.00'}
+            </Text>
+            <Text style={[styles.previewCategory, { color: colors.textSecondary }]}>
+              {formData.category || 'Category'} • {formData.location || 'Location'}
+            </Text>
+          </View>
+        </View>
+      </Card>
+    );
+  };
+
   if (!user) {
     router.replace('/(auth)');
     return null;
   }
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <View style={[styles.header, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
-        <TouchableOpacity 
-          style={styles.backButton}
-          onPress={currentStep === 1 ? () => router.back() : handleBack}
-        >
-          <Ionicons name="arrow-back" size={24} color={colors.text} />
-        </TouchableOpacity>
-        <Text style={[styles.title, { color: colors.text }]}>Create Listing</Text>
-        <View style={styles.placeholder} />
-      </View>
+    <KeyboardAvoidingView
+      style={{ flex: 1 }}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 64 : 0}
+    >
+      <View style={[styles.container, { backgroundColor: colors.background }]}>
+        <View style={[styles.header, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
+          <TouchableOpacity 
+            style={styles.backButton}
+            onPress={currentStep === 1 ? () => router.back() : handleBack}
+          >
+            <Ionicons name="arrow-back" size={24} color={colors.text} />
+          </TouchableOpacity>
+          <Text style={[styles.title, { color: colors.text }]}>Create Listing</Text>
+          <View style={styles.placeholder} />
+        </View>
 
-      <ScrollView 
-        style={styles.content}
-        showsVerticalScrollIndicator={false}
-      >
-        <MotiView
-          from={{ opacity: 0, translateY: 20 }}
-          animate={{ opacity: 1, translateY: 0 }}
-          transition={{ type: 'timing', duration: 600 }}
+        <ScrollView 
+          style={styles.content}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.scrollContent}
         >
-          {/* Progress Indicator */}
-          <View style={styles.progressContainer}>
-            <View style={styles.progressBar}>
-              <View style={[
-                styles.progressFill, 
-                { 
-                  backgroundColor: colors.primary, 
-                  width: `${(currentStep / totalSteps) * 100}%` 
-                }
-              ]} />
+          <MotiView
+            from={{ opacity: 0, translateY: 20 }}
+            animate={{ opacity: 1, translateY: 0 }}
+            transition={{ type: 'timing', duration: 600 }}
+          >
+            {/* Progress Indicator */}
+            {renderProgressBar()}
+
+            {/* Step Content */}
+            {renderStepContent()}
+
+            {/* Preview (only on last step) */}
+            {renderPreview()}
+
+            {/* Upload Progress */}
+            {uploading && renderUploadProgress()}
+
+            {/* Navigation Buttons */}
+            <View style={styles.actions}>
+              {currentStep < totalSteps ? (
+                <Button
+                  title="Continue"
+                  onPress={handleNext}
+                  style={styles.continueButton}
+                />
+              ) : (
+                <Button
+                  title="Create Listing"
+                  onPress={handleSubmit}
+                  loading={loading}
+                  style={styles.submitButton}
+                />
+              )}
+              
+              {currentStep > 1 && (
+                <Button
+                  title="Back"
+                  onPress={handleBack}
+                  variant="outline"
+                  style={styles.backButtonStyle}
+                />
+              )}
             </View>
-            <Text style={[styles.progressText, { color: colors.textSecondary }]}>
-              Step {currentStep} of {totalSteps}
-            </Text>
-          </View>
 
-          {renderStepContent()}
-
-          <View style={styles.actions}>
-            {currentStep < totalSteps ? (
-              <Button
-                title="Continue"
-                onPress={handleNext}
-                style={styles.continueButton}
-              />
-            ) : (
-              <Button
-                title="Create Listing"
-                onPress={handleSubmit}
-                loading={loading}
-                style={styles.submitButton}
-              />
+            {/* Summary of entered information */}
+            {currentStep === totalSteps && (
+              <Card style={styles.summaryCard}>
+                <Text style={[styles.summaryTitle, { color: colors.text }]}>
+                  Listing Summary
+                </Text>
+                
+                <View style={styles.summaryItem}>
+                  <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>
+                    Title
+                  </Text>
+                  <Text style={[styles.summaryValue, { color: colors.text }]}>
+                    {formData.title}
+                  </Text>
+                </View>
+                
+                <View style={styles.summaryItem}>
+                  <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>
+                    Price
+                  </Text>
+                  <Text style={[styles.summaryValue, { color: colors.primary, fontWeight: '700' }]}>
+                    ${formData.price}
+                  </Text>
+                </View>
+                
+                <View style={styles.summaryItem}>
+                  <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>
+                    Category
+                  </Text>
+                  <Text style={[styles.summaryValue, { color: colors.text }]}>
+                    {formData.category}
+                  </Text>
+                </View>
+                
+                <View style={styles.summaryItem}>
+                  <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>
+                    Condition
+                  </Text>
+                  <Text style={[styles.summaryValue, { color: colors.text }]}>
+                    {formData.condition === 'new' ? 'Brand New' : 'Used'}
+                  </Text>
+                </View>
+                
+                <View style={styles.summaryItem}>
+                  <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>
+                    Location
+                  </Text>
+                  <Text style={[styles.summaryValue, { color: colors.text }]}>
+                    {formData.location}
+                  </Text>
+                </View>
+                
+                <View style={styles.summaryItem}>
+                  <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>
+                    Images
+                  </Text>
+                  <Text style={[styles.summaryValue, { color: colors.text }]}>
+                    {images.length} {images.length === 1 ? 'image' : 'images'}
+                  </Text>
+                </View>
+              </Card>
             )}
-          </View>
-        </MotiView>
-      </ScrollView>
-    </View>
+          </MotiView>
+        </ScrollView>
+      </View>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -567,6 +970,9 @@ const styles = StyleSheet.create({
   backButton: {
     padding: 8,
   },
+  backButtonStyle: {
+    backgroundColor: 'transparent',
+  },
   title: {
     fontSize: 18,
     fontWeight: '600',
@@ -576,45 +982,77 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
+  },
+  scrollContent: {
     padding: 20,
+    paddingBottom: 40,
   },
   progressContainer: {
-    marginBottom: 32,
+    marginBottom: 24,
   },
   progressBar: {
-    height: 4,
+    height: 6,
     backgroundColor: '#E5E7EB',
-    borderRadius: 2,
-    marginBottom: 8,
+    borderRadius: 3,
+    marginBottom: 12,
+    overflow: 'hidden',
   },
   progressFill: {
     height: '100%',
-    borderRadius: 2,
+    borderRadius: 3,
+  },
+  progressSteps: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  progressStep: {
+    height: 8,
+    borderRadius: 4,
   },
   progressText: {
     fontSize: 12,
     textAlign: 'center',
+    fontWeight: '500',
+  },
+  stepIndicator: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 24,
+    gap: 16,
+  },
+  stepDot: {
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  stepNumber: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '600',
   },
   stepCard: {
     marginBottom: 24,
   },
   stepTitle: {
-    fontSize: 20,
+    fontSize: 24,
     fontWeight: '700',
-    marginBottom: 4,
+    marginBottom: 8,
   },
   stepSubtitle: {
-    fontSize: 14,
+    fontSize: 16,
     marginBottom: 24,
+    lineHeight: 22,
   },
   form: {
-    gap: 8,
+    gap: 16,
   },
   fieldContainer: {
     marginBottom: 16,
   },
   label: {
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: '500',
     marginBottom: 8,
   },
@@ -622,16 +1060,19 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
+    marginBottom: 8,
   },
   categoryChip: {
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 20,
     borderWidth: 1,
+    minWidth: '30%',
   },
   categoryText: {
-    fontSize: 12,
+    fontSize: 14,
     fontWeight: '500',
+    textAlign: 'center',
   },
   conditionButtons: {
     flexDirection: 'row',
@@ -648,11 +1089,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   conditionText: {
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: '500',
   },
   specificationsTitle: {
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: '600',
     marginTop: 16,
     marginBottom: 8,
@@ -701,17 +1142,197 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  primaryBadge: {
+    position: 'absolute',
+    bottom: 4,
+    left: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  primaryBadgeText: {
+    fontSize: 8,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  emptyImageContainer: {
+    height: 160,
+    borderWidth: 2,
+    borderStyle: 'dashed',
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  emptyImageText: {
+    fontSize: 16,
+    fontWeight: '500',
+    marginTop: 12,
+    marginBottom: 4,
+  },
+  emptyImageSubtext: {
+    fontSize: 14,
+  },
   error: {
     fontSize: 12,
     marginTop: 4,
   },
   actions: {
-    marginBottom: 40,
+    gap: 12,
+    marginBottom: 24,
   },
   continueButton: {
-    marginTop: 16,
+    marginTop: 8,
   },
   submitButton: {
+    marginTop: 8,
+  },
+  tipContainer: {
     marginTop: 16,
+    padding: 16,
+    backgroundColor: '#FEF3C7', // Amber 100
+    borderRadius: 8,
+  },
+  tipHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+    gap: 8,
+  },
+  tipTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  tipText: {
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  categoryInfoContainer: {
+    marginTop: 16,
+    padding: 16,
+    backgroundColor: '#E0F2FE', // Light blue 100
+    borderRadius: 8,
+  },
+  categoryInfoTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 8,
+  },
+  categoryInfoText: {
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  pricingTipsContainer: {
+    marginTop: 16,
+    padding: 16,
+    backgroundColor: '#DCFCE7', // Green 100
+    borderRadius: 8,
+  },
+  imageTipsContainer: {
+    marginTop: 16,
+    padding: 16,
+    backgroundColor: '#F3E8FF', // Purple 100
+    borderRadius: 8,
+  },
+  uploadProgressContainer: {
+    marginVertical: 24,
+    alignItems: 'center',
+  },
+  uploadingText: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 12,
+  },
+  progressBarContainer: {
+    width: '100%',
+    height: 8,
+    borderRadius: 4,
+    marginBottom: 8,
+    overflow: 'hidden',
+  },
+  progressBarFill: {
+    height: '100%',
+    borderRadius: 4,
+  },
+  progressPercentage: {
+    fontSize: 14,
+  },
+  previewCard: {
+    marginBottom: 24,
+  },
+  previewTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    marginBottom: 16,
+  },
+  previewContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  previewImageContainer: {
+    position: 'relative',
+    marginRight: 16,
+  },
+  previewImage: {
+    width: 80,
+    height: 80,
+    borderRadius: 8,
+  },
+  previewImagePlaceholder: {
+    width: 80,
+    height: 80,
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  previewBadge: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  previewBadgeText: {
+    fontSize: 8,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  previewDetails: {
+    flex: 1,
+  },
+  previewProductTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  previewPrice: {
+    fontSize: 20,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  previewCategory: {
+    fontSize: 14,
+  },
+  summaryCard: {
+    marginBottom: 40,
+  },
+  summaryTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    marginBottom: 16,
+  },
+  summaryItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+  },
+  summaryLabel: {
+    fontSize: 16,
+  },
+  summaryValue: {
+    fontSize: 16,
   },
 });

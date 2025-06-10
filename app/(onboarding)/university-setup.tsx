@@ -1,14 +1,14 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
-import { useRouter } from 'expo-router';
-import { MotiView } from 'moti';
-import { LinearGradient } from 'expo-linear-gradient';
-import { useAuth } from '@/contexts/AuthContext';
-import { useTheme } from '@/contexts/ThemeContext';
-import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
+import { Input } from '@/components/ui/Input';
+import { useAuth } from '@/contexts/AuthContext';
+import { useTheme } from '@/contexts/ThemeContext';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useRouter } from 'expo-router';
+import { MotiView } from 'moti';
+import React, { useState } from 'react';
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Toast from 'react-native-toast-message';
 
 const POPULAR_UNIVERSITIES = [
@@ -140,7 +140,7 @@ export default function UniversitySetupScreen() {
                   setShowSuggestions(text.length > 0);
                 }}
                 onFocus={() => setShowSuggestions(university.length > 0)}
-                leftIcon={<Ionicons name="school\" size={20} color={colors.textTertiary} />}
+                leftIcon={<Ionicons name="school" size={20} color={colors.textTertiary} />}
               />
 
               {showSuggestions && filteredUniversities.length > 0 && (
@@ -171,7 +171,7 @@ export default function UniversitySetupScreen() {
                 placeholder="Enter your student ID"
                 value={studentId}
                 onChangeText={setStudentId}
-                leftIcon={<Ionicons name="card\" size={20} color={colors.textTertiary} />}
+                leftIcon={<Ionicons name="card" size={20} color={colors.textTertiary} />}
               />
             </View>
           </Card>
