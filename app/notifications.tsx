@@ -1,14 +1,15 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl, AppState, AppStateStatus } from 'react-native';
-import { useRouter } from 'expo-router';
-import { MotiView } from 'moti';
-import { useAuth } from '@/contexts/AuthContext';
-import { useTheme } from '@/contexts/ThemeContext';
 import { Card } from '@/components/ui/Card';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
+import { useAuth } from '@/contexts/AuthContext';
+import { useTheme } from '@/contexts/ThemeContext';
 import { NotificationService } from '@/lib/notifications';
 import { Notification } from '@/types';
 import { Ionicons } from '@expo/vector-icons';
+import { formatDistanceToNow } from 'date-fns';
+import { useRouter } from 'expo-router';
+import { MotiView } from 'moti';
+import React, { useEffect, useRef, useState } from 'react';
+import { AppState, AppStateStatus, FlatList, RefreshControl, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Toast from 'react-native-toast-message';
 
 export default function NotificationsScreen() {
@@ -27,7 +28,6 @@ export default function NotificationsScreen() {
       fetchNotifications();
       subscribeToNotifications();
       
-      // Listen for app state changes
       const subscription = AppState.addEventListener('change', handleAppStateChange);
       
       return () => {
@@ -41,7 +41,6 @@ export default function NotificationsScreen() {
 
   const handleAppStateChange = (nextAppState: AppStateStatus) => {
     if (appState.current.match(/inactive|background/) && nextAppState === 'active') {
-      // App has come to the foreground
       fetchNotifications();
     }
     appState.current = nextAppState;
@@ -54,6 +53,11 @@ export default function NotificationsScreen() {
       setNotifications(data || []);
     } catch (error) {
       console.error('Error fetching notifications:', error);
+      Toast.show({
+        type: 'error',
+        text1: 'Error',
+        text2: 'Failed to fetch notifications',
+      });
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -65,15 +69,11 @@ export default function NotificationsScreen() {
     
     subscription.current = NotificationService.subscribeToNotifications(user.id, (newNotification) => {
       setNotifications(prev => {
-        // Check if notification already exists
         const exists = prev.some(n => n.id === newNotification.id);
         if (exists) return prev;
-        
-        // Add new notification at the beginning
         return [newNotification, ...prev];
       });
       
-      // Show local notification
       NotificationService.sendLocalNotification(
         newNotification.title,
         newNotification.body,
@@ -85,8 +85,6 @@ export default function NotificationsScreen() {
   const markAsRead = async (notificationId: string) => {
     try {
       await NotificationService.markAsRead(notificationId);
-      
-      // Update local state
       setNotifications(prev => 
         prev.map(notif => 
           notif.id === notificationId 
@@ -96,135 +94,79 @@ export default function NotificationsScreen() {
       );
     } catch (error) {
       console.error('Error marking notification as read:', error);
-    }
-  };
-
-  const markAllAsRead = async () => {
-    try {
-      await NotificationService.markAllAsRead(user?.id || '');
-      
-      // Update local state
-      setNotifications(prev => 
-        prev.map(notif => ({ ...notif, is_read: true }))
-      );
-      
       Toast.show({
-        type: 'success',
-        text1: 'All Marked as Read',
-        text2: 'All notifications have been marked as read',
+        type: 'error',
+        text1: 'Error',
+        text2: 'Failed to mark notification as read',
       });
-    } catch (error) {
-      console.error('Error marking all notifications as read:', error);
     }
-  };
-
-  const onRefresh = () => {
-    setRefreshing(true);
-    fetchNotifications();
   };
 
   const handleNotificationPress = (notification: Notification) => {
-    // Mark as read
     if (!notification.is_read) {
       markAsRead(notification.id);
     }
-    
-    // Handle navigation based on notification type
-    if (notification.type === 'message' && notification.data?.chatId) {
+
+    // Navigate based on notification type
+    if (notification.data?.type === 'message' && notification.data?.chatId) {
       router.push(`/chat/${notification.data.chatId}`);
-    } else if (notification.type === 'product' && notification.data?.productId) {
-      router.push(`/product/${notification.data.productId}`);
-    } else if (notification.type === 'order' && notification.data?.orderId) {
+    } else if (notification.data?.type === 'order' && notification.data?.orderId) {
       router.push(`/order/${notification.data.orderId}`);
+    } else if (notification.data?.type === 'product' && notification.data?.productId) {
+      router.push(`/product/${notification.data.productId}`);
     }
   };
 
   const getNotificationIcon = (type: string) => {
     switch (type) {
       case 'message':
-        return 'chatbubble';
+        return 'chatbubble-outline';
       case 'order':
-        return 'receipt';
+        return 'cart-outline';
       case 'product':
-        return 'cube';
-      case 'system':
-        return 'settings';
+        return 'cube-outline';
       default:
-        return 'notifications';
+        return 'notifications-outline';
     }
   };
 
-  const getNotificationColor = (type: string) => {
-    switch (type) {
-      case 'message':
-        return colors.info;
-      case 'order':
-        return colors.success;
-      case 'product':
-        return colors.primary;
-      case 'system':
-        return colors.warning;
-      default:
-        return colors.textSecondary;
-    }
-  };
-
-  const formatTime = (dateString: string) => {
-    const date = new Date(dateString);
-    const now = new Date();
-    const diffInHours = (now.getTime() - date.getTime()) / (1000 * 60 * 60);
-
-    if (diffInHours < 1) {
-      return 'Just now';
-    } else if (diffInHours < 24) {
-      return `${Math.floor(diffInHours)}h ago`;
-    } else if (diffInHours < 48) {
-      return 'Yesterday';
-    } else {
-      return date.toLocaleDateString();
-    }
-  };
-
-  const renderNotificationItem = ({ item, index }: { item: Notification; index: number }) => (
+  const renderNotification = ({ item: notification }: { item: Notification }) => (
     <MotiView
-      from={{ opacity: 0, translateX: -50 }}
-      animate={{ opacity: 1, translateX: 0 }}
-      transition={{ type: 'timing', delay: index * 100 }}
+      from={{ opacity: 0, translateY: 20 }}
+      animate={{ opacity: 1, translateY: 0 }}
+      transition={{ type: 'timing' }}
     >
       <TouchableOpacity
-        onPress={() => handleNotificationPress(item)}
-        activeOpacity={0.8}
+        onPress={() => handleNotificationPress(notification)}
+        activeOpacity={0.7}
       >
-        <Card style={styles.notificationItem}>
+        <Card style={[
+          styles.notificationCard,
+          { backgroundColor: notification.is_read ? colors.surface : colors.background }
+        ]}>
           <View style={styles.notificationContent}>
-            <View style={[styles.notificationIcon, { backgroundColor: getNotificationColor(item.type) }]}>
+            <View style={[styles.iconContainer, { backgroundColor: colors.primary + '20' }]}>
               <Ionicons 
-                name={getNotificationIcon(item.type) as any} 
-                size={20} 
-                color="#FFFFFF" 
+                name={getNotificationIcon(notification.type)} 
+                size={24} 
+                color={colors.primary} 
               />
             </View>
             
             <View style={styles.notificationDetails}>
-              <Text style={[
-                styles.notificationTitle, 
-                { 
-                  color: colors.text,
-                  fontWeight: item.is_read ? '600' : '700'
-                }
-              ]}>
-                {item.title}
+              <Text style={[styles.notificationTitle, { color: colors.text }]}>
+                {notification.title}
               </Text>
               <Text style={[styles.notificationBody, { color: colors.textSecondary }]}>
-                {item.body}
+                {notification.body}
               </Text>
               <Text style={[styles.notificationTime, { color: colors.textTertiary }]}>
-                {formatTime(item.created_at)}
+                {formatDistanceToNow(new Date(notification.created_at), { addSuffix: true })}
               </Text>
             </View>
-            
-            {!item.is_read && (
-              <View style={[styles.unreadBadge, { backgroundColor: colors.primary }]} />
+
+            {!notification.is_read && (
+              <View style={[styles.unreadDot, { backgroundColor: colors.primary }]} />
             )}
           </View>
         </Card>
@@ -232,73 +174,55 @@ export default function NotificationsScreen() {
     </MotiView>
   );
 
-  if (!user) {
-    router.replace('/(auth)');
-    return null;
-  }
+  const renderEmptyState = () => (
+    <View style={styles.emptyState}>
+      <Ionicons name="notifications-off-outline" size={64} color={colors.textTertiary} />
+      <Text style={[styles.emptyTitle, { color: colors.text }]}>
+        No Notifications
+      </Text>
+      <Text style={[styles.emptySubtitle, { color: colors.textSecondary }]}>
+        You're all caught up! Check back later for updates.
+      </Text>
+    </View>
+  );
 
-  const unreadCount = notifications.filter(n => !n.is_read).length;
+  if (loading) {
+    return <LoadingSpinner />;
+  }
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <View style={[styles.header, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
-        <TouchableOpacity 
-          style={styles.backButton}
-          onPress={() => router.back()}
-        >
-          <Ionicons name="arrow-back" size={24} color={colors.text} />
-        </TouchableOpacity>
-        <Text style={[styles.title, { color: colors.text }]}>Notifications</Text>
-        {unreadCount > 0 && (
-          <TouchableOpacity 
+        <Text style={[styles.headerTitle, { color: colors.text }]}>
+          Notifications
+        </Text>
+        {notifications.length > 0 && (
+          <TouchableOpacity
+            onPress={() => NotificationService.markAllAsRead(user?.id || '')}
             style={styles.markAllButton}
-            onPress={markAllAsRead}
           >
             <Text style={[styles.markAllText, { color: colors.primary }]}>
-              Mark All Read
+              Mark all as read
             </Text>
           </TouchableOpacity>
         )}
       </View>
 
-      {unreadCount > 0 && (
-        <View style={[styles.unreadHeader, { backgroundColor: colors.primaryLight + '20' }]}>
-          <Text style={[styles.unreadText, { color: colors.primary }]}>
-            You have {unreadCount} unread notification{unreadCount > 1 ? 's' : ''}
-          </Text>
-        </View>
-      )}
-
-      <View style={styles.content}>
-        {loading ? (
-          <LoadingSpinner />
-        ) : notifications.length === 0 ? (
-          <View style={styles.emptyState}>
-            <Ionicons name="notifications" size={64} color={colors.textTertiary} />
-            <Text style={[styles.emptyTitle, { color: colors.text }]}>
-              No Notifications
-            </Text>
-            <Text style={[styles.emptySubtitle, { color: colors.textSecondary }]}>
-              You'll see notifications about messages, orders, and updates here
-            </Text>
-          </View>
-        ) : (
-          <FlatList
-            data={notifications}
-            renderItem={renderNotificationItem}
-            keyExtractor={(item) => item.id}
-            showsVerticalScrollIndicator={false}
-            contentContainerStyle={styles.listContent}
-            refreshControl={
-              <RefreshControl
-                refreshing={refreshing}
-                onRefresh={onRefresh}
-                tintColor={colors.primary}
-              />
-            }
+      <FlatList
+        data={notifications}
+        renderItem={renderNotification}
+        keyExtractor={(item) => item.id}
+        contentContainerStyle={styles.listContent}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={fetchNotifications}
+            tintColor={colors.primary}
           />
-        )}
-      </View>
+        }
+        ListEmptyComponent={renderEmptyState}
+      />
     </View>
   );
 }
@@ -309,55 +233,41 @@ const styles = StyleSheet.create({
   },
   header: {
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
+    alignItems: 'center',
     paddingHorizontal: 20,
     paddingTop: 60,
     paddingBottom: 20,
     borderBottomWidth: 1,
   },
-  backButton: {
-    padding: 8,
-  },
-  title: {
+  headerTitle: {
     fontSize: 24,
     fontWeight: '700',
-    flex: 1,
-    textAlign: 'center',
   },
   markAllButton: {
     padding: 8,
   },
   markAllText: {
     fontSize: 14,
-    fontWeight: '600',
-  },
-  unreadHeader: {
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-  },
-  unreadText: {
-    fontSize: 14,
     fontWeight: '500',
   },
-  content: {
-    flex: 1,
-  },
   listContent: {
-    padding: 20,
+    padding: 16,
   },
-  notificationItem: {
+  notificationCard: {
     marginBottom: 12,
+    borderRadius: 12,
+    overflow: 'hidden',
   },
   notificationContent: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
-    position: 'relative',
+    padding: 16,
+    alignItems: 'center',
   },
-  notificationIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+  iconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 12,
@@ -367,23 +277,22 @@ const styles = StyleSheet.create({
   },
   notificationTitle: {
     fontSize: 16,
+    fontWeight: '600',
     marginBottom: 4,
   },
   notificationBody: {
     fontSize: 14,
-    lineHeight: 20,
     marginBottom: 4,
+    lineHeight: 20,
   },
   notificationTime: {
     fontSize: 12,
   },
-  unreadBadge: {
+  unreadDot: {
     width: 8,
     height: 8,
     borderRadius: 4,
-    position: 'absolute',
-    top: 8,
-    right: 8,
+    marginLeft: 8,
   },
   emptyState: {
     flex: 1,
