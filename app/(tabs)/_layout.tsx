@@ -193,7 +193,7 @@ export default function TabLayout() {
     );
   };
 
-  const tabBarHeight = Platform.OS === 'ios' ? 60 : 80;
+  const tabBarHeight = Platform.OS === 'ios' ? 60 : 75;
   
   return (
     <Tabs
@@ -201,7 +201,7 @@ export default function TabLayout() {
          
         headerShown: false,
         tabBarStyle: {
-          
+
           backgroundColor: Platform.OS === 'ios' ? 'transparent' : colors.surface + 'F8',
           borderTopColor: Platform.OS === 'ios' ? colors.border + '40' : colors.border,
           borderTopWidth: Platform.OS === 'ios' ? 0.5 : 1,

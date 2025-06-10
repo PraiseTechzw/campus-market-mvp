@@ -118,7 +118,7 @@ export default function EditProductScreen() {
         price: data.price.toString(),
         category: data.category,
         condition: data.condition as 'new' | 'used',
-        specifications: data.specifications || {},
+        specifications: (data.specifications || {}) as Record<string, string>,
       });
       setImages(data.images || []);
     } catch (error) {
@@ -351,7 +351,7 @@ export default function EditProductScreen() {
                 value={formData.title}
                 onChangeText={(text) => setFormData({ ...formData, title: text })}
                 error={errors.title}
-                leftIcon={<Ionicons name="text\" size={20} color={colors.textTertiary} />}
+                leftIcon={<Ionicons name="text" size={20} color={colors.textTertiary} />}
               />
 
               <Input
@@ -362,7 +362,7 @@ export default function EditProductScreen() {
                 multiline
                 numberOfLines={4}
                 error={errors.description}
-                leftIcon={<Ionicons name="document-text\" size={20} color={colors.textTertiary} />}
+                leftIcon={<Ionicons name="document-text" size={20} color={colors.textTertiary} />}
                 style={{ height: 100, textAlignVertical: 'top' }}
               />
             </View>
@@ -457,7 +457,7 @@ export default function EditProductScreen() {
                 onChangeText={(text) => setFormData({ ...formData, price: text })}
                 keyboardType="numeric"
                 error={errors.price}
-                leftIcon={<Ionicons name="cash\" size={20} color={colors.textTertiary} />}
+                leftIcon={<Ionicons name="cash" size={20} color={colors.textTertiary} />}
               />
 
               {formData.category && CATEGORY_FIELDS[formData.category] && (

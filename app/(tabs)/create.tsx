@@ -9,7 +9,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
 import { MotiView } from 'moti';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Dimensions, Image, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Toast from 'react-native-toast-message';
 
@@ -89,6 +89,7 @@ export default function CreateScreen() {
   const { colors } = useTheme();
   const { user } = useAuth();
   const router = useRouter();
+  const scrollViewRef = useRef<ScrollView>(null);
   
   const [currentStep, setCurrentStep] = useState(1);
   const [formData, setFormData] = useState<ProductFormData>({
@@ -113,7 +114,7 @@ export default function CreateScreen() {
     if (user?.university) {
       setFormData(prev => ({
         ...prev,
-        location: user.university
+        location: user.university as string
       }));
     }
   }, [user]);
@@ -131,12 +132,11 @@ export default function CreateScreen() {
     }
 
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.8,
+      mediaTypes: ['images'],
       allowsMultipleSelection: true,
       selectionLimit: 5,
+      quality: 0.8,
+      aspect: [1, 1],
     });
 
     if (!result.canceled && result.assets.length > 0) {
@@ -164,6 +164,7 @@ export default function CreateScreen() {
     }
 
     const result = await ImagePicker.launchCameraAsync({
+      mediaTypes: ['images'],
       allowsEditing: true,
       aspect: [1, 1],
       quality: 0.8,
@@ -243,15 +244,15 @@ export default function CreateScreen() {
   const handleNext = () => {
     if (validateStep(currentStep)) {
       setCurrentStep(currentStep + 1);
-      // Scroll to top when moving to next step
-      window.scrollTo(0, 0);
+      // Scroll to top using ScrollView ref
+      scrollViewRef.current?.scrollTo({ y: 0, animated: true });
     }
   };
 
   const handleBack = () => {
     setCurrentStep(currentStep - 1);
-    // Scroll to top when moving to previous step
-    window.scrollTo(0, 0);
+    // Scroll to top using ScrollView ref
+    scrollViewRef.current?.scrollTo({ y: 0, animated: true });
   };
 
   const handleSubmit = async () => {
@@ -290,7 +291,23 @@ export default function CreateScreen() {
         }
       });
 
-      // Create product
+      // First, get the category ID
+      const { data: categoryData, error: categoryError } = await supabase
+        .from('categories')
+        .select('id')
+        .eq('name', formData.category)
+        .single();
+
+      if (categoryError) {
+        console.error('Error fetching category:', categoryError);
+        throw new Error('Failed to fetch category information');
+      }
+
+      if (!categoryData) {
+        throw new Error('Category not found');
+      }
+
+      // Create product with the correct category_id
       const { data, error } = await supabase
         .from('products')
         .insert({
@@ -298,7 +315,7 @@ export default function CreateScreen() {
           description: formData.description.trim(),
           price: Number(formData.price),
           category: formData.category,
-          category_id: formData.category.toLowerCase().replace(/\s+/g, '_'),
+          category_id: categoryData.id,
           condition: formData.condition,
           images: productImages,
           specifications: productSpecifications,
@@ -309,7 +326,10 @@ export default function CreateScreen() {
         })
         .select();
 
-      if (error) throw error;
+      if (error) {
+        console.error('Error creating product:', error);
+        throw new Error(error.message);
+      }
 
       Toast.show({
         type: 'success',
@@ -821,8 +841,8 @@ export default function CreateScreen() {
   return (
     <KeyboardAvoidingView
       style={{ flex: 1 }}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 64 : 0}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
     >
       <View style={[styles.container, { backgroundColor: colors.background }]}>
         <View style={[styles.header, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
@@ -837,9 +857,11 @@ export default function CreateScreen() {
         </View>
 
         <ScrollView 
+          ref={scrollViewRef}
           style={styles.content}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
         >
           <MotiView
             from={{ opacity: 0, translateY: 20 }}
@@ -985,7 +1007,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     padding: 20,
-    paddingBottom: 40,
+    paddingBottom: 100,
   },
   progressContainer: {
     marginBottom: 24,
@@ -1180,6 +1202,8 @@ const styles = StyleSheet.create({
   actions: {
     gap: 12,
     marginBottom: 24,
+    marginTop: 16,
+    paddingBottom: 20,
   },
   continueButton: {
     marginTop: 8,
@@ -1190,7 +1214,7 @@ const styles = StyleSheet.create({
   tipContainer: {
     marginTop: 16,
     padding: 16,
-    backgroundColor: '#FEF3C7', // Amber 100
+    backgroundColor: '#47D653FF',
     borderRadius: 8,
   },
   tipHeader: {

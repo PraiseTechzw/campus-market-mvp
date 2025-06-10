@@ -1,12 +1,10 @@
-import React, { useState, useEffect } from 'react';
-import { View, StyleSheet, TouchableOpacity, Dimensions, FlatList } from 'react-native';
-import { useRouter, useLocalSearchParams } from 'expo-router';
-import { useTheme } from '@/contexts/ThemeContext';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
+import { useTheme } from '@/contexts/ThemeContext';
 import { supabase } from '@/lib/supabase';
 import { Ionicons } from '@expo/vector-icons';
-import { Image } from 'react-native';
-
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import React, { useEffect, useState } from 'react';
+import { Dimensions, FlatList, Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 const { width, height } = Dimensions.get('window');
 
 export default function ImageViewerScreen() {
@@ -123,9 +121,9 @@ export default function ImageViewerScreen() {
       <View style={styles.counter}>
         <View style={[styles.counterContainer, { backgroundColor: colors.surface }]}>
           <Ionicons name="images" size={16} color={colors.text} />
-          <View style={styles.counterText}>
+          <Text style={styles.counterText}>
             {currentIndex + 1} / {images.length}
-          </View>
+          </Text>
         </View>
       </View>
     </View>
