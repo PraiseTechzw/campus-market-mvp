@@ -8,8 +8,11 @@ export interface User {
   phone?: string;
   location?: string;
   rating: number;
-  rating_count: number;
+  total_reviews: number;
+  total_sales: number;
+  total_earnings: number;
   last_active: string;
+  is_online: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -21,7 +24,7 @@ export interface Product {
   price: number;
   category: string;
   condition: 'new' | 'used';
-  images: string[];
+  images: string[] | null;
   specifications?: Record<string, any>;
   seller_id: string;
   seller: User;

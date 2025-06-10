@@ -1,8 +1,8 @@
 import { Card } from '@/components/ui/Card';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { useAuth } from '@/contexts/AuthContext';
+import { useNotifications } from '@/contexts/NotificationContext';
 import { useTheme } from '@/contexts/ThemeContext';
-import { NotificationService } from '@/lib/notifications';
 import { Notification } from '@/types';
 import { Ionicons } from '@expo/vector-icons';
 import { formatDistanceToNow } from 'date-fns';
@@ -10,103 +10,38 @@ import { useRouter } from 'expo-router';
 import { MotiView } from 'moti';
 import React, { useEffect, useRef, useState } from 'react';
 import { AppState, AppStateStatus, FlatList, RefreshControl, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import Toast from 'react-native-toast-message';
 
 export default function NotificationsScreen() {
   const { colors } = useTheme();
   const { user } = useAuth();
   const router = useRouter();
-  
-  const [notifications, setNotifications] = useState<Notification[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { notifications, loading, markAsRead, markAllAsRead, refreshNotifications } = useNotifications();
   const [refreshing, setRefreshing] = useState(false);
-  const subscription = useRef<{ unsubscribe: () => void } | null>(null);
   const appState = useRef(AppState.currentState);
 
   useEffect(() => {
-    if (user) {
-      fetchNotifications();
-      subscribeToNotifications();
-      
-      const subscription = AppState.addEventListener('change', handleAppStateChange);
-      
-      return () => {
-        subscription.remove();
-        if (subscription.current) {
-          subscription.current.unsubscribe();
-        }
-      };
-    }
-  }, [user]);
+    const subscription = AppState.addEventListener('change', handleAppStateChange);
+    return () => subscription.remove();
+  }, []);
 
   const handleAppStateChange = (nextAppState: AppStateStatus) => {
     if (appState.current.match(/inactive|background/) && nextAppState === 'active') {
-      fetchNotifications();
+      refreshNotifications();
     }
     appState.current = nextAppState;
   };
 
-  const fetchNotifications = async () => {
-    try {
-      const { data, error } = await NotificationService.getNotifications(user?.id || '');
-      if (error) throw new Error(error);
-      setNotifications(data || []);
-    } catch (error) {
-      console.error('Error fetching notifications:', error);
-      Toast.show({
-        type: 'error',
-        text1: 'Error',
-        text2: 'Failed to fetch notifications',
-      });
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  };
-
-  const subscribeToNotifications = () => {
-    if (!user) return;
-    
-    subscription.current = NotificationService.subscribeToNotifications(user.id, (newNotification) => {
-      setNotifications(prev => {
-        const exists = prev.some(n => n.id === newNotification.id);
-        if (exists) return prev;
-        return [newNotification, ...prev];
-      });
-      
-      NotificationService.sendLocalNotification(
-        newNotification.title,
-        newNotification.body,
-        newNotification.data
-      );
-    });
-  };
-
-  const markAsRead = async (notificationId: string) => {
-    try {
-      await NotificationService.markAsRead(notificationId);
-      setNotifications(prev => 
-        prev.map(notif => 
-          notif.id === notificationId 
-            ? { ...notif, is_read: true }
-            : notif
-        )
-      );
-    } catch (error) {
-      console.error('Error marking notification as read:', error);
-      Toast.show({
-        type: 'error',
-        text1: 'Error',
-        text2: 'Failed to mark notification as read',
-      });
-    }
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await refreshNotifications();
+    setRefreshing(false);
   };
 
   const handleNotificationPress = (notification: Notification) => {
     if (!notification.is_read) {
       markAsRead(notification.id);
     }
-
+    
     // Navigate based on notification type
     if (notification.data?.type === 'message' && notification.data?.chatId) {
       router.push(`/chat/${notification.data.chatId}`);
@@ -140,10 +75,10 @@ export default function NotificationsScreen() {
         onPress={() => handleNotificationPress(notification)}
         activeOpacity={0.7}
       >
-        <Card style={[
-          styles.notificationCard,
-          { backgroundColor: notification.is_read ? colors.surface : colors.background }
-        ]}>
+        <Card style={{
+          ...styles.notificationCard,
+          backgroundColor: notification.is_read ? colors.surface : colors.background
+        }}>
           <View style={styles.notificationContent}>
             <View style={[styles.iconContainer, { backgroundColor: colors.primary + '20' }]}>
               <Ionicons 
@@ -164,7 +99,7 @@ export default function NotificationsScreen() {
                 {formatDistanceToNow(new Date(notification.created_at), { addSuffix: true })}
               </Text>
             </View>
-
+            
             {!notification.is_read && (
               <View style={[styles.unreadDot, { backgroundColor: colors.primary }]} />
             )}
@@ -197,8 +132,8 @@ export default function NotificationsScreen() {
           Notifications
         </Text>
         {notifications.length > 0 && (
-          <TouchableOpacity
-            onPress={() => NotificationService.markAllAsRead(user?.id || '')}
+          <TouchableOpacity 
+            onPress={markAllAsRead}
             style={styles.markAllButton}
           >
             <Text style={[styles.markAllText, { color: colors.primary }]}>
@@ -217,7 +152,7 @@ export default function NotificationsScreen() {
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
-            onRefresh={fetchNotifications}
+            onRefresh={handleRefresh}
             tintColor={colors.primary}
           />
         }

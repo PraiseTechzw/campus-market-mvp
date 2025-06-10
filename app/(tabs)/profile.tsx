@@ -8,7 +8,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { MotiView } from 'moti';
 import React, { useEffect, useState } from 'react';
-import { Alert, Image, RefreshControl, ScrollView, StyleSheet, Switch, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, Image, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Toast from 'react-native-toast-message';
 
 interface ProfileStats {
@@ -329,66 +329,6 @@ export default function ProfileScreen() {
           title: 'Reviews',
           subtitle: `${stats.averageRating} rating (${stats.totalReviews} reviews)`,
           onPress: () => router.push('/profile/reviews'),
-        },
-      ],
-    },
-    {
-      title: 'Settings',
-      items: [
-        {
-          icon: 'notifications',
-          title: 'Notifications',
-          subtitle: 'Manage notification preferences',
-          onPress: () => {},
-          rightComponent: (
-            <Switch
-              value={notificationsEnabled}
-              onValueChange={toggleNotifications}
-              trackColor={{ false: colors.border, true: colors.primary }}
-              thumbColor="#FFFFFF"
-            />
-          ),
-        },
-        {
-          icon: getThemeIcon(),
-          title: 'Theme',
-          subtitle: getThemeText(),
-          onPress: toggleTheme,
-        },
-        {
-          icon: 'card',
-          title: 'Payment Methods',
-          subtitle: 'Manage payment options',
-          onPress: () => router.push('/profile/payment-methods'),
-        },
-        {
-          icon: 'location',
-          title: 'Addresses',
-          subtitle: 'Manage delivery addresses',
-          onPress: () => router.push('/profile/addresses'),
-        },
-      ],
-    },
-    {
-      title: 'Support',
-      items: [
-        {
-          icon: 'help-circle',
-          title: 'Help & Support',
-          subtitle: 'Get help and contact support',
-          onPress: () => router.push('/support'),
-        },
-        {
-          icon: 'document-text',
-          title: 'Terms & Privacy',
-          subtitle: 'Read our terms and privacy policy',
-          onPress: () => router.push('/legal'),
-        },
-        {
-          icon: 'information-circle',
-          title: 'About',
-          subtitle: 'App version and information',
-          onPress: () => router.push('/about'),
         },
       ],
     },

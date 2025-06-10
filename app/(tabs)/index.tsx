@@ -1,6 +1,7 @@
 import { Card } from '@/components/ui/Card';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { useAuth } from '@/contexts/AuthContext';
+import { useNotifications } from '@/contexts/NotificationContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { supabase } from '@/lib/supabase';
 import { CATEGORIES, Product } from '@/types';
@@ -17,6 +18,7 @@ const { width } = Dimensions.get('window');
 export default function HomeScreen() {
   const { colors } = useTheme();
   const { user } = useAuth();
+  const { unreadCount } = useNotifications();
   const router = useRouter();
   
   const [products, setProducts] = useState<Product[]>([]);
@@ -55,11 +57,13 @@ export default function HomeScreen() {
   };
 
   const fetchUserPreferences = async () => {
+    if (!user?.id) return;
+    
     try {
       const { data, error } = await supabase
         .from('user_preferences')
         .select('preferred_categories')
-        .eq('user_id', user?.id)
+        .eq('user_id', user.id)
         .single();
 
       if (error && error.code !== 'PGRST116') throw error;
@@ -96,6 +100,43 @@ export default function HomeScreen() {
     }
   };
 
+  const mapProductFromDB = (product: any): Product => ({
+    id: product.id,
+    title: product.title,
+    description: product.description,
+    price: product.price,
+    category: product.category,
+    condition: product.condition as 'new' | 'used',
+    images: product.images ?? [],
+    specifications: product.specifications as Record<string, any>,
+    seller_id: product.seller_id,
+    seller: {
+      id: product.seller.id,
+      email: product.seller.email,
+      name: product.seller.name,
+      university: product.seller.university ?? undefined,
+      avatar_url: product.seller.avatar_url ?? undefined,
+      is_verified: product.seller.is_verified,
+      phone: product.seller.phone ?? undefined,
+      location: product.seller.location ?? undefined,
+      rating: product.seller.rating ?? 0,
+      total_reviews: product.seller.total_reviews ?? 0,
+      total_sales: product.seller.total_sales ?? 0,
+      total_earnings: product.seller.total_earnings ?? 0,
+      last_active: product.seller.last_active,
+      is_online: product.seller.is_online,
+      created_at: product.seller.created_at,
+      updated_at: product.seller.updated_at
+    },
+    is_sold: product.is_sold,
+    is_featured: product.is_featured,
+    view_count: product.view_count,
+    location: product.location ?? undefined,
+    tags: product.tags ?? [],
+    created_at: product.created_at,
+    updated_at: product.updated_at
+  });
+
   const fetchProducts = async () => {
     try {
       const { data, error } = await supabase
@@ -105,11 +146,10 @@ export default function HomeScreen() {
           seller:users(*)
         `)
         .eq('is_sold', false)
-        .order('created_at', { ascending: false })
-        .limit(20);
+        .order('created_at', { ascending: false });
 
       if (error) throw error;
-      setProducts(data || []);
+      setProducts(data?.map(mapProductFromDB) || []);
     } catch (error) {
       console.error('Error fetching products:', error);
     }
@@ -121,21 +161,14 @@ export default function HomeScreen() {
         .from('products')
         .select(`
           *,
-          seller:users!inner(*)
+          seller:users(*)
         `)
-        .eq('is_sold', false)
         .eq('is_featured', true)
-        .order('created_at', { ascending: false })
-        .limit(8);
+        .eq('is_sold', false)
+        .order('created_at', { ascending: false });
 
       if (error) throw error;
-      const typedData = (data || []).map(product => ({
-        ...product,
-        condition: product.condition as 'new' | 'used',
-        images: product.images || [],
-        specifications: product.specifications || {}
-      }));
-      setFeaturedProducts(typedData);
+      setFeaturedProducts(data?.map(mapProductFromDB) || []);
     } catch (error) {
       console.error('Error fetching featured products:', error);
     }
@@ -147,21 +180,14 @@ export default function HomeScreen() {
         .from('products')
         .select(`
           *,
-          seller:users!inner(*)
+          seller:users(*)
         `)
         .eq('is_sold', false)
         .order('view_count', { ascending: false })
-        .order('created_at', { ascending: false })
-        .limit(10);
+        .limit(5);
 
       if (error) throw error;
-      const typedData = (data || []).map(product => ({
-        ...product,
-        condition: product.condition as 'new' | 'used',
-        images: product.images || [],
-        specifications: product.specifications || {}
-      }));
-      setTrendingProducts(typedData);
+      setTrendingProducts(data?.map(mapProductFromDB) || []);
     } catch (error) {
       console.error('Error fetching trending products:', error);
     }
@@ -173,21 +199,14 @@ export default function HomeScreen() {
         .from('products')
         .select(`
           *,
-          seller:users!inner(*)
+          seller:users(*)
         `)
         .eq('is_sold', false)
-        .lte('price', 100)
         .order('created_at', { ascending: false })
-        .limit(8);
+        .limit(5);
 
       if (error) throw error;
-      const typedData = (data || []).map(product => ({
-        ...product,
-        condition: product.condition as 'new' | 'used',
-        images: product.images || [],
-        specifications: product.specifications || {}
-      }));
-      setFlashDeals(typedData);
+      setFlashDeals(data?.map(mapProductFromDB) || []);
     } catch (error) {
       console.error('Error fetching flash deals:', error);
     }
@@ -199,79 +218,53 @@ export default function HomeScreen() {
         .from('products')
         .select(`
           *,
-          seller:users!inner(*)
+          seller:users(*)
         `)
         .eq('is_sold', false)
-        .gte('created_at', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString())
         .order('created_at', { ascending: false })
-        .limit(6);
+        .limit(5);
 
       if (error) throw error;
-      const typedData = (data || []).map(product => ({
-        ...product,
-        condition: product.condition as 'new' | 'used',
-        images: product.images || [],
-        specifications: product.specifications || {}
-      }));
-      setNewArrivals(typedData);
+      setNewArrivals(data?.map(mapProductFromDB) || []);
     } catch (error) {
       console.error('Error fetching new arrivals:', error);
     }
   };
 
   const fetchUniversityProducts = async () => {
-    if (!user?.university) return;
-    
     try {
       const { data, error } = await supabase
         .from('products')
         .select(`
           *,
-          seller:users!inner(*)
+          seller:users(*)
         `)
         .eq('is_sold', false)
-        .eq('seller.university', user.university)
-        .neq('seller_id', user.id)
+        .eq('seller.university', user?.university)
         .order('created_at', { ascending: false })
-        .limit(8);
+        .limit(5);
 
       if (error) throw error;
-      const typedData = (data || []).map(product => ({
-        ...product,
-        condition: product.condition as 'new' | 'used',
-        images: product.images || [],
-        specifications: product.specifications || {}
-      }));
-      setUniversityProducts(typedData);
+      setUniversityProducts(data?.map(mapProductFromDB) || []);
     } catch (error) {
       console.error('Error fetching university products:', error);
     }
   };
 
   const fetchRecommendedProducts = async () => {
-    if (!user?.id || userPreferences.length === 0) return;
-    
     try {
       const { data, error } = await supabase
         .from('products')
         .select(`
           *,
-          seller:users!inner(*)
+          seller:users(*)
         `)
         .eq('is_sold', false)
-        .in('category', userPreferences)
-        .neq('seller_id', user.id)
-        .order('created_at', { ascending: false })
-        .limit(8);
+        .order('view_count', { ascending: false })
+        .limit(5);
 
       if (error) throw error;
-      const typedData = (data || []).map(product => ({
-        ...product,
-        condition: product.condition as 'new' | 'used',
-        images: product.images || [],
-        specifications: product.specifications || {}
-      }));
-      setRecommendedProducts(typedData);
+      setRecommendedProducts(data?.map(mapProductFromDB) || []);
     } catch (error) {
       console.error('Error fetching recommended products:', error);
     }
@@ -305,9 +298,13 @@ export default function HomeScreen() {
             onPress={() => router.push('/notifications')}
           >
             <Ionicons name="notifications" size={24} color={colors.text} />
-            <View style={[styles.notificationBadge, { backgroundColor: colors.error }]}>
-              <Text style={styles.notificationBadgeText}>3</Text>
-            </View>
+            {unreadCount > 0 && (
+              <View style={[styles.notificationBadge, { backgroundColor: colors.error }]}>
+                <Text style={styles.notificationBadgeText}>
+                  {unreadCount > 99 ? '99+' : unreadCount}
+                </Text>
+              </View>
+            )}
           </TouchableOpacity>
         </View>
       </View>
