@@ -1,20 +1,9 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { useAuth } from './AuthContext';
+import { NotificationService } from '@/lib/notifications';
 import { Notification } from '@/types';
-import { supabase } from '@/lib/supabase';
-import { 
-  subscribeToNotifications, 
-  getUnreadNotificationCount, 
-  markAllNotificationsAsRead,
-  markNotificationAsRead,
-  registerForPushNotifications,
-  savePushToken,
-  addNotificationListener,
-  addNotificationResponseListener
-} from '@/lib/messaging';
 import { useRouter } from 'expo-router';
+import React, { createContext, ReactNode, useContext, useEffect, useState } from 'react';
 import { Platform } from 'react-native';
-import * as Notifications from 'expo-notifications';
+import { useAuth } from './AuthContext';
 
 interface NotificationContextType {
   notifications: Notification[];
@@ -62,15 +51,15 @@ export function NotificationProvider({ children }: NotificationProviderProps) {
     
     try {
       // Register for push notifications
-      const token = await registerForPushNotifications();
+      const token = await NotificationService.registerForPushNotifications();
       
       if (token && user) {
         // Save token to database
-        await savePushToken(user.id, token);
+        await NotificationService.savePushToken(user.id, token);
       }
       
       // Add notification listeners
-      const foregroundSubscription = addNotificationListener((notification) => {
+      const foregroundSubscription = NotificationService.addNotificationListener((notification) => {
         // Handle notification received when app is in foreground
         console.log('Notification received in foreground:', notification);
         // Refresh notifications
@@ -78,7 +67,7 @@ export function NotificationProvider({ children }: NotificationProviderProps) {
         fetchUnreadCount();
       });
       
-      const responseSubscription = addNotificationResponseListener((response) => {
+      const responseSubscription = NotificationService.addNotificationResponseListener((response) => {
         // Handle notification response when user taps on notification
         console.log('Notification response:', response);
         const data = response.notification.request.content.data;
@@ -108,12 +97,16 @@ export function NotificationProvider({ children }: NotificationProviderProps) {
   const subscribeToRealTimeNotifications = () => {
     if (!user) return () => {};
     
-    return subscribeToNotifications(user.id, (notification) => {
+    const channel = NotificationService.subscribeToNotifications(user.id, (notification) => {
       // Add the new notification to the list
       setNotifications(prev => [notification, ...prev]);
       // Increment unread count
       setUnreadCount(prev => prev + 1);
     });
+
+    return () => {
+      channel.unsubscribe();
+    };
   };
 
   // Fetch notifications
@@ -122,13 +115,7 @@ export function NotificationProvider({ children }: NotificationProviderProps) {
     
     setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from('notifications')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false })
-        .limit(50);
-
+      const { data, error } = await NotificationService.getNotifications(user.id);
       if (error) throw error;
       setNotifications(data || []);
     } catch (error) {
@@ -143,7 +130,7 @@ export function NotificationProvider({ children }: NotificationProviderProps) {
     if (!user) return;
     
     try {
-      const { count, error } = await getUnreadNotificationCount(user.id);
+      const { count, error } = await NotificationService.getUnreadCount(user.id);
       if (error) throw error;
       setUnreadCount(count);
     } catch (error) {
@@ -156,7 +143,7 @@ export function NotificationProvider({ children }: NotificationProviderProps) {
     if (!user) return;
     
     try {
-      const success = await markAllNotificationsAsRead(user.id);
+      const success = await NotificationService.markAllAsRead(user.id);
       if (success) {
         setNotifications(prev => 
           prev.map(notification => ({ ...notification, is_read: true }))
@@ -171,7 +158,7 @@ export function NotificationProvider({ children }: NotificationProviderProps) {
   // Mark a notification as read
   const markAsRead = async (notificationId: string) => {
     try {
-      const success = await markNotificationAsRead(notificationId);
+      const success = await NotificationService.markAsRead(notificationId);
       if (success) {
         setNotifications(prev => 
           prev.map(notification => 
