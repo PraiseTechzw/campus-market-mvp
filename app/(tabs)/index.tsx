@@ -572,62 +572,6 @@ export default function HomeScreen() {
     )
   );
 
-  const renderCategories = () => (
-    <View style={styles.section}>
-      <View style={styles.sectionHeader}>
-        <Text style={[styles.sectionTitle, { color: colors.text }]}>Shop by Category</Text>
-        <TouchableOpacity onPress={() => router.push('/categories')}>
-          <Text style={[styles.seeAllText, { color: colors.primary }]}>See All</Text>
-        </TouchableOpacity>
-      </View>
-      <View style={styles.categoriesGrid}>
-        {CATEGORIES.slice(0, 8).map((category, index) => {
-          const categoryIcons: Record<string, string> = {
-            'Electronics': 'phone-portrait',
-            'Books': 'book',
-            'Fashion': 'shirt',
-            'Services': 'construct',
-            'Furniture': 'bed',
-            'Sports': 'football',
-            'Beauty': 'flower',
-            'Food': 'restaurant',
-          };
-
-          const categoryColors = [
-            colors.primary, colors.info, colors.success, colors.warning,
-            colors.error, '#8B5CF6', '#F59E0B', '#10B981'
-          ];
-
-          return (
-            <MotiView
-              key={category}
-              from={{ opacity: 0, scale: 0.8 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ type: 'spring', delay: index * 100 }}
-            >
-              <TouchableOpacity
-                style={[styles.categoryCard, { backgroundColor: colors.surface }]}
-                onPress={() => router.push({
-                  pathname: '/(tabs)/search',
-                  params: { category }
-                })}
-              >
-                <View style={[styles.categoryIcon, { backgroundColor: categoryColors[index] }]}>
-                  <Ionicons 
-                    name={categoryIcons[category] as any} 
-                    size={24} 
-                    color="#FFFFFF" 
-                  />
-                </View>
-                <Text style={[styles.categoryText, { color: colors.text }]}>{category}</Text>
-              </TouchableOpacity>
-            </MotiView>
-          );
-        })}
-      </View>
-    </View>
-  );
-
   const renderFeaturedProducts = () => (
     featuredProducts.length > 0 && (
       <View style={styles.section}>
@@ -820,6 +764,48 @@ export default function HomeScreen() {
     )
   );
 
+  const renderCategoryStack = () => (
+    <View style={styles.categoryStackContainer}>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.categoryStack}
+      >
+        {CATEGORIES.map((category, index) => (
+          <TouchableOpacity
+            key={category}
+            style={[styles.categoryStackItem, { backgroundColor: colors.surface }]}
+            onPress={() => {
+              router.push({
+                pathname: '/(tabs)/search',
+                params: { category }
+              });
+            }}
+          >
+            <View style={[styles.categoryStackIcon, { backgroundColor: colors.primary }]}>
+              <Ionicons 
+                name={
+                  category === 'Electronics' ? 'phone-portrait' :
+                  category === 'Books' ? 'book' :
+                  category === 'Fashion' ? 'shirt' :
+                  category === 'Services' ? 'construct' :
+                  category === 'Furniture' ? 'bed' :
+                  category === 'Sports' ? 'football' :
+                  category === 'Beauty' ? 'flower' :
+                  category === 'Food' ? 'restaurant' :
+                  'ellipsis-horizontal'
+                } 
+                size={24} 
+                color="#FFFFFF" 
+              />
+            </View>
+            <Text style={[styles.categoryStackText, { color: colors.text }]}>{category}</Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+    </View>
+  );
+
   if (!user) {
     router.replace('/(auth)');
     return null;
@@ -844,47 +830,10 @@ export default function HomeScreen() {
         }
       >
         {renderHeroBanner()}
-        <View style={styles.categoryStackContainer}>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.categoryStack}
-          >
-            {CATEGORIES.map((category, index) => (
-              <TouchableOpacity
-                key={category}
-                style={[styles.categoryStackItem, { backgroundColor: colors.surface }]}
-                onPress={() => router.push({
-                  pathname: '/(tabs)/search',
-                  params: { category }
-                })}
-              >
-                <View style={[styles.categoryStackIcon, { backgroundColor: colors.primary }]}>
-                  <Ionicons 
-                    name={
-                      category === 'Electronics' ? 'phone-portrait' :
-                      category === 'Books' ? 'book' :
-                      category === 'Fashion' ? 'shirt' :
-                      category === 'Services' ? 'construct' :
-                      category === 'Furniture' ? 'bed' :
-                      category === 'Sports' ? 'football' :
-                      category === 'Beauty' ? 'flower' :
-                      category === 'Food' ? 'restaurant' :
-                      'ellipsis-horizontal'
-                    } 
-                    size={24} 
-                    color="#FFFFFF" 
-                  />
-                </View>
-                <Text style={[styles.categoryStackText, { color: colors.text }]}>{category}</Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-        </View>
+        {renderCategoryStack()}
         {renderUniversityProducts()}
         {renderRecommendedProducts()}
         {renderFlashDeals()}
-        {renderCategories()}
         {renderFeaturedProducts()}
         {renderNewArrivals()}
         {renderTrendingProducts()}
@@ -1119,193 +1068,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     textDecorationLine: 'line-through',
   },
-  categoriesGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    paddingHorizontal: 20,
-    gap: 12,
-  },
-  categoryCard: {
-    width: (width - 76) / 4,
-    alignItems: 'center',
-    padding: 16,
-    borderRadius: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  categoryIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  categoryText: {
-    fontSize: 12,
-    fontWeight: '600',
-    textAlign: 'center',
-  },
-  featuredList: {
-    paddingLeft: 20,
-  },
-  featuredCard: {
-    width: width * 0.7,
-    height: 200,
-    marginRight: 16,
-  },
-  featuredCardContent: {
-    padding: 0,
-    overflow: 'hidden',
-    position: 'relative',
-  },
-  featuredImage: {
-    width: '100%',
-    height: '100%',
-  },
-  featuredImagePlaceholder: {
-    width: '100%',
-    height: '100%',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  featuredOverlay: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    padding: 16,
-    height: '50%',
-    justifyContent: 'space-between',
-  },
-  featuredBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    alignSelf: 'flex-start',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-    gap: 4,
-  },
-  featuredBadgeText: {
-    fontSize: 10,
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
-  featuredInfo: {
-    gap: 4,
-  },
-  featuredTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
-  featuredPrice: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
-  newArrivalsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    paddingHorizontal: 20,
-    gap: 12,
-  },
-  newArrivalCardContainer: {
-    width: (width - 64) / 2,
-  },
-  newArrivalCard: {
-    borderRadius: 12,
-    overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  newArrivalImage: {
-    width: '100%',
-    height: 120,
-  },
-  newArrivalImagePlaceholder: {
-    width: '100%',
-    height: 120,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  newArrivalInfo: {
-    padding: 12,
-  },
-  newArrivalTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    marginBottom: 4,
-  },
-  newArrivalPrice: {
-    fontSize: 16,
-    fontWeight: '700',
-    marginBottom: 4,
-  },
-  newArrivalMeta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  newArrivalTime: {
-    fontSize: 10,
-  },
-  trendingGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    paddingHorizontal: 20,
-    gap: 12,
-  },
-  trendingCardContainer: {
-    width: (width - 64) / 2,
-  },
-  trendingCard: {
-    borderRadius: 12,
-    overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  trendingImage: {
-    width: '100%',
-    height: 120,
-  },
-  trendingImagePlaceholder: {
-    width: '100%',
-    height: 120,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  trendingInfo: {
-    padding: 12,
-  },
-  trendingTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    marginBottom: 4,
-  },
-  trendingPrice: {
-    fontSize: 16,
-    fontWeight: '700',
-    marginBottom: 4,
-  },
-  trendingMeta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  viewCount: {
-    fontSize: 10,
-  },
   universityProductsList: {
     paddingLeft: 20,
   },
@@ -1479,5 +1241,113 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     textAlign: 'center',
+  },
+  trendingGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    paddingHorizontal: 20,
+    gap: 12,
+  },
+  trendingCardContainer: {
+    width: (width - 64) / 2,
+  },
+  trendingCard: {
+    borderRadius: 12,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  trendingImage: {
+    width: '100%',
+    height: 120,
+  },
+  trendingImagePlaceholder: {
+    width: '100%',
+    height: 120,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  trendingInfo: {
+    padding: 12,
+  },
+  trendingTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  trendingPrice: {
+    fontSize: 16,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  trendingMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  viewCount: {
+    fontSize: 10,
+  },
+  featuredList: {
+    paddingLeft: 20,
+  },
+  featuredCard: {
+    width: width * 0.7,
+    height: 200,
+    marginRight: 16,
+  },
+  featuredCardContent: {
+    padding: 0,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  featuredImage: {
+    width: '100%',
+    height: '100%',
+  },
+  featuredImagePlaceholder: {
+    width: '100%',
+    height: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  featuredOverlay: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    padding: 16,
+    height: '50%',
+    justifyContent: 'space-between',
+  },
+  featuredBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    gap: 4,
+  },
+  featuredBadgeText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  featuredInfo: {
+    gap: 4,
+  },
+  featuredTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  featuredPrice: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
 });
