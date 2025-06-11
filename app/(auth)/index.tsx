@@ -38,16 +38,6 @@ export default function WelcomeScreen() {
   }).current;
 
   useEffect(() => {
-    if (!loading && user) {
-      if (!user.university) {
-        router.replace('/(onboarding)/welcome');
-      } else {
-        router.replace('/(tabs)');
-      }
-    }
-  }, [user, loading]);
-
-  useEffect(() => {
     // Continuous pulse animation for logo
     Animated.loop(
       Animated.sequence([

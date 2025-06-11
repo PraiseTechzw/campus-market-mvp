@@ -23,10 +23,17 @@ CREATE OR REPLACE FUNCTION create_user_profile(
 RETURNS uuid
 LANGUAGE plpgsql
 SECURITY DEFINER -- This runs with the privileges of the function creator
+SET search_path = public -- Ensure we're using the public schema
 AS $$
 DECLARE
   created_user_id uuid;
 BEGIN
+  -- First check if the user exists in auth.users
+  IF NOT EXISTS (SELECT 1 FROM auth.users WHERE id = user_id) THEN
+    RAISE EXCEPTION 'User does not exist in auth.users';
+  END IF;
+
+  -- Insert or update user profile
   INSERT INTO public.users (
     id, 
     email, 
@@ -41,7 +48,7 @@ BEGIN
     user_email,
     user_name,
     is_user_verified,
-    'pending',
+    CASE WHEN is_user_verified THEN 'approved' ELSE 'pending' END,
     now(),
     now()
   )
@@ -49,6 +56,7 @@ BEGIN
     email = EXCLUDED.email,
     name = EXCLUDED.name,
     is_verified = EXCLUDED.is_verified,
+    verification_status = CASE WHEN EXCLUDED.is_verified THEN 'approved' ELSE 'pending' END,
     updated_at = now()
   RETURNING id INTO created_user_id;
   
@@ -74,6 +82,8 @@ BEGIN
   RETURN created_user_id;
 EXCEPTION
   WHEN OTHERS THEN
+    -- Log the error details
+    RAISE LOG 'Error in create_user_profile: %', SQLERRM;
     RAISE EXCEPTION 'Error creating user profile: %', SQLERRM;
 END;
 $$;

@@ -43,7 +43,8 @@
       "router": {},
       "eas": {
         "projectId": "2113d3fb-be51-4b91-825b-ae5c051119e7"
-      }
+      },
+      "CLERK_PUBLISHABLE_KEY": "pk_test_cHJvLW1hcnRpbi0xNS5jbGVyay5hY2NvdW50cy5kZXYk"
     }
   }
 }

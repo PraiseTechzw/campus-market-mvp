@@ -1,8 +1,8 @@
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
-import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
+import { useSignUp } from '@clerk/clerk-expo';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Link, useRouter } from 'expo-router';
@@ -13,35 +13,32 @@ import Toast from 'react-native-toast-message';
 
 export default function RegisterScreen() {
   const { colors } = useTheme();
-  const { signUp } = useAuth();
   const router = useRouter();
+  const { isLoaded, signUp: clerkSignUp, setActive } = useSignUp();
   
   const [formData, setFormData] = useState({
-    name: '',
     email: '',
     password: '',
     confirmPassword: '',
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
+  const [pendingVerification, setPendingVerification] = useState(false);
+  const [code, setCode] = useState('');
 
   const validateForm = () => {
     const newErrors: Record<string, string> = {};
     
-    if (!formData.name.trim()) {
-      newErrors.name = 'Name is required';
-    }
-    
-    if (!formData.email) {
+    if (!formData.email.trim()) {
       newErrors.email = 'Email is required';
     } else if (!/\S+@\S+\.\S+/.test(formData.email)) {
-      newErrors.email = 'Please enter a valid email';
+      newErrors.email = 'Please enter a valid email address';
     }
     
     if (!formData.password) {
       newErrors.password = 'Password is required';
-    } else if (formData.password.length < 6) {
-      newErrors.password = 'Password must be at least 6 characters';
+    } else if (formData.password.length < 8) {
+      newErrors.password = 'Password must be at least 8 characters long';
     }
     
     if (formData.password !== formData.confirmPassword) {
@@ -57,28 +54,57 @@ export default function RegisterScreen() {
     
     setLoading(true);
     try {
-      const { error } = await signUp(formData.email, formData.password, formData.name);
-      
-      if (error) {
-        console.error("Registration error:", error);
-        Toast.show({
-          type: 'error',
-          text1: 'Registration Failed',
-          text2: error,
-        });
-      } else {
+      console.log('🔍 DEBUG: Starting registration process');
+      console.log('📝 Form data:', {
+        email: formData.email,
+        passwordLength: formData.password.length
+      });
+
+      console.log('🔍 DEBUG: Calling signUp function...');
+      if (!isLoaded || !clerkSignUp) {
+        throw new Error('SignUp not initialized');
+      }
+
+      const result = await clerkSignUp.create({
+        emailAddress: formData.email,
+        password: formData.password
+      });
+
+      console.log('🔍 DEBUG: Signup result:', result);
+
+      if (!result.status) {
+        throw new Error('No status returned from signup');
+      }
+
+      // If we need to verify email
+      if (result.status === 'missing_requirements' && result.unverifiedFields.includes('email_address')) {
+        console.log('✅ DEBUG: Preparing email verification');
+        await result.prepareEmailAddressVerification();
+        
         Toast.show({
           type: 'success',
-          text1: 'Account Created!',
+          text1: 'Verification Required',
           text2: 'Please check your email for the verification code',
         });
+        
         router.push({
           pathname: '/(auth)/verify-email',
           params: { email: formData.email }
         });
+      } else if (result.status === 'complete') {
+        console.log('✅ DEBUG: Registration successful');
+        Toast.show({
+          type: 'success',
+          text1: 'Account Created!',
+          text2: 'Welcome to Campus Market',
+        });
+        router.replace('/(tabs)');
+      } else {
+        console.log('⚠️ DEBUG: Unexpected status:', result.status);
+        throw new Error(`Registration status: ${result.status}`);
       }
     } catch (error: any) {
-      console.error("Unexpected error during registration:", error);
+      console.error('❌ DEBUG: Registration error:', error);
       Toast.show({
         type: 'error',
         text1: 'Registration Failed',
@@ -134,15 +160,6 @@ export default function RegisterScreen() {
         >
           <Card style={styles.formCard} blur intensity={20}>
             <View style={styles.form}>
-              <Input
-                label="Full Name"
-                placeholder="Enter your full name"
-                value={formData.name}
-                onChangeText={(text) => setFormData({ ...formData, name: text })}
-                error={errors.name}
-                leftIcon={<Ionicons name="person" size={20} color={colors.textTertiary} />}
-              />
-
               <Input
                 label="Email"
                 placeholder="Enter your email"

@@ -1,21 +1,19 @@
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
-import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
+import { useSignIn } from '@clerk/clerk-expo';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Link, useRouter } from 'expo-router';
+import { Link, router } from 'expo-router';
 import { MotiView } from 'moti';
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Toast from 'react-native-toast-message';
 
 export default function LoginScreen() {
   const { colors } = useTheme();
-  const { signIn } = useAuth();
-  const router = useRouter();
-  
+  const { isLoaded, signIn } = useSignIn();
   const [formData, setFormData] = useState({
     email: '',
     password: '',
@@ -26,16 +24,14 @@ export default function LoginScreen() {
   const validateForm = () => {
     const newErrors: Record<string, string> = {};
     
-    if (!formData.email) {
+    if (!formData.email.trim()) {
       newErrors.email = 'Email is required';
     } else if (!/\S+@\S+\.\S+/.test(formData.email)) {
-      newErrors.email = 'Please enter a valid email';
+      newErrors.email = 'Please enter a valid email address';
     }
     
     if (!formData.password) {
       newErrors.password = 'Password is required';
-    } else if (formData.password.length < 6) {
-      newErrors.password = 'Password must be at least 6 characters';
     }
     
     setErrors(newErrors);
@@ -47,38 +43,40 @@ export default function LoginScreen() {
     
     setLoading(true);
     try {
-      const { error } = await signIn(formData.email, formData.password);
-      
-      if (error) {
-        console.error('Login error:', error);
-        if (error.includes('Email not confirmed')) {
-          router.push({
-            pathname: '/(auth)/verify-email',
-            params: { email: formData.email }
-          });
-          return;
-        }
-        Toast.show({
-          type: 'error',
-          text1: 'Login Failed',
-          text2: error,
-        });
-        setLoading(false);
-        return;
-      }
-      
-      Toast.show({
-        type: 'success',
-        text1: 'Welcome Back!',
-        text2: 'You have successfully signed in',
+      console.log('🔍 DEBUG: Starting login process');
+      console.log('📝 Form data:', {
+        email: formData.email,
+        passwordLength: formData.password.length
       });
+
+      if (!isLoaded || !signIn) {
+        throw new Error('SignIn not initialized');
+      }
+
+      const result = await signIn.create({
+        identifier: formData.email,
+        password: formData.password,
+      });
+
+      if (result.status === 'complete') {
+        console.log('✅ DEBUG: Login successful');
+        Toast.show({
+          type: 'success',
+          text1: 'Welcome Back!',
+          text2: 'Successfully logged in',
+        });
+        router.replace('/(tabs)');
+      } else {
+        throw new Error('Login incomplete');
+      }
     } catch (error: any) {
-      console.error('Unexpected error during login:', error);
+      console.error('❌ DEBUG: Login error:', error);
       Toast.show({
         type: 'error',
         text1: 'Login Failed',
-        text2: error.message || 'An unexpected error occurred',
+        text2: error.message || 'Invalid email or password',
       });
+    } finally {
       setLoading(false);
     }
   };
@@ -110,7 +108,7 @@ export default function LoginScreen() {
             </View>
             <Text style={styles.headerTitle}>Welcome Back</Text>
             <Text style={styles.headerSubtitle}>
-              Sign in to your Campus Market account
+              Sign in to continue your journey
             </Text>
           </MotiView>
         </View>
@@ -149,15 +147,14 @@ export default function LoginScreen() {
                 leftIcon={<Ionicons name="lock-closed" size={20} color={colors.textTertiary} />}
               />
 
-              <View style={styles.forgotPasswordContainer}>
-                <Link href="/(auth)/forgot-password" asChild>
-                  <TouchableOpacity>
-                    <Text style={[styles.forgotPasswordText, { color: colors.primary }]}>
-                      Forgot Password?
-                    </Text>
-                  </TouchableOpacity>
-                </Link>
-              </View>
+              <TouchableOpacity 
+                style={styles.forgotPassword}
+                onPress={() => router.push('/(auth)/forgot-password')}
+              >
+                <Text style={[styles.forgotPasswordText, { color: colors.primary }]}>
+                  Forgot Password?
+                </Text>
+              </TouchableOpacity>
 
               <Button
                 title="Sign In"
@@ -165,6 +162,22 @@ export default function LoginScreen() {
                 loading={loading}
                 style={styles.loginButton}
               />
+
+              <View style={styles.divider}>
+                <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
+                <Text style={[styles.dividerText, { color: colors.textSecondary }]}>or</Text>
+                <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
+              </View>
+
+              <TouchableOpacity
+                style={[styles.socialButton, { borderColor: colors.border }]}
+                onPress={() => {}}
+              >
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <Ionicons name="logo-google" size={20} color={colors.text} />
+                  <Text style={{ color: colors.text }}>Continue with Google</Text>
+                </View>
+              </TouchableOpacity>
             </View>
           </Card>
 
@@ -191,104 +204,110 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   headerGradient: {
-    paddingTop: 60,
-    paddingBottom: 40,
-    paddingHorizontal: 24,
+    height: 300,
+    borderBottomLeftRadius: 30,
+    borderBottomRightRadius: 30,
   },
   headerContent: {
-    position: 'relative',
+    flex: 1,
+    padding: 20,
+    paddingTop: 60,
   },
   backButton: {
     position: 'absolute',
-    top: 0,
-    left: 0,
+    top: 60,
+    left: 20,
     zIndex: 1,
   },
   backButtonContainer: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
     justifyContent: 'center',
     alignItems: 'center',
   },
   logoSection: {
     alignItems: 'center',
-    paddingTop: 20,
+    marginTop: 20,
   },
   logoContainer: {
     width: 80,
     height: 80,
     borderRadius: 40,
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 24,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.2,
-    shadowRadius: 16,
-    elevation: 8,
+    marginBottom: 20,
   },
   headerTitle: {
     fontSize: 32,
-    fontWeight: '800',
+    fontWeight: 'bold',
     color: '#FFFFFF',
     marginBottom: 8,
-    textAlign: 'center',
   },
   headerSubtitle: {
     fontSize: 16,
     color: 'rgba(255, 255, 255, 0.8)',
     textAlign: 'center',
-    lineHeight: 22,
   },
   content: {
     flex: 1,
-    marginTop: -20,
+    marginTop: -50,
   },
   scrollContent: {
-    padding: 24,
-    paddingTop: 40,
+    padding: 20,
   },
   formCard: {
-    marginBottom: 32,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 16 },
-    shadowOpacity: 0.1,
-    shadowRadius: 24,
-    elevation: 16,
+    padding: 20,
+    borderRadius: 20,
+    marginBottom: 20,
   },
   form: {
-    gap: 8,
+    gap: 16,
   },
-  forgotPasswordContainer: {
-    alignItems: 'flex-end',
-    marginBottom: 8,
-    marginTop: 8,
+  forgotPassword: {
+    alignSelf: 'flex-end',
+    marginTop: -8,
   },
   forgotPasswordText: {
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: '500',
   },
   loginButton: {
-    marginTop: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    elevation: 4,
+    marginTop: 8,
+  },
+  divider: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 20,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+  },
+  dividerText: {
+    marginHorizontal: 10,
+    fontSize: 14,
+  },
+  socialButton: {
+    marginTop: 8,
+    padding: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    alignItems: 'center',
   },
   footer: {
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
+    marginTop: 20,
   },
   footerText: {
-    fontSize: 16,
+    fontSize: 14,
   },
   linkText: {
-    fontSize: 16,
-    fontWeight: '700',
+    fontSize: 14,
+    fontWeight: '600',
   },
 });

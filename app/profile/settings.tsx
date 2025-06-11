@@ -173,7 +173,7 @@ export default function SettingsScreen() {
     return 'System Default';
   };
 
-  const cycleTheme = () => {
+  const handleThemePress = () => {
     const themes = ['light', 'dark', 'system'] as const;
     const currentIndex = themes.indexOf(theme);
     const nextIndex = (currentIndex + 1) % themes.length;
@@ -215,7 +215,7 @@ export default function SettingsScreen() {
             
             <TouchableOpacity 
               style={styles.settingItem}
-              onPress={cycleTheme}
+              onPress={handleThemePress}
             >
               <View style={styles.settingLeft}>
                 <View style={[styles.settingIcon, { backgroundColor: colors.primary }]}>

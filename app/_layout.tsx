@@ -4,6 +4,8 @@ import { MessagingProvider } from '@/contexts/MessagingContext';
 import { NotificationProvider } from '@/contexts/NotificationContext';
 import { ThemeProvider, useTheme } from '@/contexts/ThemeContext';
 import { useFrameworkReady } from '@/hooks/useFrameworkReady';
+import { ClerkProvider } from '@clerk/clerk-expo';
+import Constants from 'expo-constants';
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
@@ -17,15 +19,18 @@ SplashScreen.preventAutoHideAsync();
 
 function RootLayoutContent() {
   const { colorScheme } = useTheme();
+  const isReady = useFrameworkReady();
   
   useEffect(() => {
-    // Hide splash screen after a delay to show our custom splash
-    const timer = setTimeout(() => {
+    if (isReady) {
+      // Hide splash screen when everything is ready
       SplashScreen.hideAsync();
-    }, 2000);
-
-    return () => clearTimeout(timer);
-  }, []);
+    }
+  }, [isReady]);
+  
+  if (!isReady) {
+    return null;
+  }
   
   return (
     <>
@@ -42,19 +47,19 @@ function RootLayoutContent() {
 }
 
 export default function RootLayout() {
-  useFrameworkReady();
-
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <ThemeProvider>
-        <AuthProvider>
-          <NotificationProvider>
-            <MessagingProvider>
-              <RootLayoutContent />
-            </MessagingProvider>
-          </NotificationProvider>
-        </AuthProvider>
-      </ThemeProvider>
+      <ClerkProvider publishableKey={Constants.expoConfig?.extra?.clerkPublishableKey}>
+        <ThemeProvider>
+          <AuthProvider>
+            <NotificationProvider>
+              <MessagingProvider>
+                <RootLayoutContent />
+              </MessagingProvider>
+            </NotificationProvider>
+          </AuthProvider>
+        </ThemeProvider>
+      </ClerkProvider>
     </GestureHandlerRootView>
   );
 }

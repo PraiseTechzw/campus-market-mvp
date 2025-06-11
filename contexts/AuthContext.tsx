@@ -1,152 +1,139 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { supabase } from '@/lib/supabase';
 import { User } from '@/types';
-import { storage, CACHE_KEYS } from '@/lib/storage';
+import { useAuth as useClerkAuth, useUser as useClerkUser, useSignIn, useSignUp } from '@clerk/clerk-expo';
+import { createContext, useContext, useEffect, useState } from 'react';
 import Toast from 'react-native-toast-message';
 
 interface AuthContextType {
   user: User | null;
   loading: boolean;
+  signUp: (email: string, password: string) => Promise<{ error?: string }>;
   signIn: (email: string, password: string) => Promise<{ error?: string }>;
-  signUp: (email: string, password: string, name: string) => Promise<{ error?: string }>;
   signOut: () => Promise<void>;
-  updateProfile: (updates: Partial<User>) => Promise<{ error?: string }>;
+  updateUserProfile: (updates: { name?: string; avatar_url?: string }) => Promise<{ error?: string }>;
+  fetchUserProfile: (userId: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-interface AuthProviderProps {
-  children: ReactNode;
-}
-
-export function AuthProvider({ children }: AuthProviderProps) {
+export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const { isLoaded: isClerkLoaded, signOut: clerkSignOut } = useClerkAuth();
+  const { signUp: clerkSignUp } = useSignUp();
+  const { signIn: clerkSignIn } = useSignIn();
+  const { user: clerkUser, isLoaded: isUserLoaded } = useClerkUser();
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Get initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user) {
-        fetchUserProfile(session.user.id);
-      } else {
+    const initializeUser = async () => {
+      if (isClerkLoaded && isUserLoaded) {
+        if (clerkUser) {
+          try {
+            // First try to get the user from Supabase
+            const { data: supabaseUser, error } = await supabase
+              .from('users')
+              .select('*')
+              .eq('id', clerkUser.id)
+              .single();
+
+            if (error) {
+              console.error('Error fetching user from Supabase:', error);
+            }
+
+            // Convert Clerk user to our User type
+            const userData: User = {
+              id: clerkUser.id,
+              email: clerkUser.emailAddresses[0]?.emailAddress || '',
+              name: supabaseUser?.name || clerkUser.fullName || '',
+              university: supabaseUser?.university,
+              avatar_url: supabaseUser?.avatar_url || clerkUser.imageUrl || undefined,
+              phone: supabaseUser?.phone || clerkUser.phoneNumbers[0]?.phoneNumber || undefined,
+              bio: supabaseUser?.bio,
+              is_verified: clerkUser.emailAddresses[0]?.verification?.status === 'verified',
+              verification_status: clerkUser.emailAddresses[0]?.verification?.status === 'verified' ? 'approved' : 'pending',
+              rating: supabaseUser?.rating || 0,
+              total_reviews: supabaseUser?.total_reviews || 0,
+              total_sales: supabaseUser?.total_sales || 0,
+              total_earnings: supabaseUser?.total_earnings || 0,
+              last_active: new Date().toISOString(),
+              is_online: true,
+              created_at: clerkUser.createdAt?.toISOString() || new Date().toISOString(),
+              updated_at: new Date().toISOString()
+            };
+
+            setUser(userData);
+          } catch (error) {
+            console.error('Error initializing user:', error);
+            setUser(null);
+          }
+        } else {
+          setUser(null);
+        }
         setLoading(false);
       }
-    });
+    };
 
-    // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log('Auth state changed:', event, session?.user?.id);
-      
-      if (session?.user) {
-        if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
-          await fetchUserProfile(session.user.id);
-        }
-      } else {
-        setUser(null);
-        await storage.removeItem(CACHE_KEYS.USER_PROFILE);
-        setLoading(false);
-      }
-    });
+    initializeUser();
+  }, [isClerkLoaded, isUserLoaded, clerkUser]);
 
-    return () => subscription.unsubscribe();
-  }, []);
-
-  const fetchUserProfile = async (userId: string) => {
+  const signUp = async (email: string, password: string) => {
     try {
-      // Add a small delay to ensure the database trigger has completed
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      const { data, error } = await supabase
-        .from('users')
-        .select('*')
-        .eq('id', userId)
-        .single();
+      console.log('🔍 DEBUG: ====== STARTING CLERK SIGNUP ======');
+      console.log('📝 Signup data:', { email, passwordLength: password.length });
 
-      if (error) {
-        console.error('Error fetching user profile:', error);
-        // If user doesn't exist, try to create it
-        if (error.code === 'PGRST116') {
-          await createUserProfile(userId);
-          return;
-        }
-        throw error;
-      }
+      if (!clerkSignUp) throw new Error('SignUp not initialized');
 
-      setUser(data);
-      await storage.setItem(CACHE_KEYS.USER_PROFILE, data);
-    } catch (error) {
-      console.error('Error in fetchUserProfile:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const createUserProfile = async (userId: string) => {
-    try {
-      const { data: authUser } = await supabase.auth.getUser();
-      if (!authUser.user) throw new Error('No authenticated user');
-
-      // Use RPC function to bypass RLS policies for user creation
-      const { data, error } = await supabase.rpc('create_user_profile', {
-        user_id: userId,
-        user_email: authUser.user.email!,
-        user_name: authUser.user.user_metadata?.name || 'User',
-        is_user_verified: false
+      const result = await clerkSignUp.create({
+        emailAddress: email,
+        password
       });
 
-      if (error) {
-        console.error('RPC error creating user profile:', error);
-        throw error;
-      }
+      if (result.status === 'complete' && result.createdUserId) {
+        console.log('✅ DEBUG: Signup successful');
+        
+        // Create user profile in Supabase
+        const { error: profileError } = await supabase
+          .from('users')
+          .insert({
+            id: result.createdUserId,
+            email: email,
+            name: email.split('@')[0], // Use email username as default name
+            is_verified: false,
+            verification_status: 'pending',
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          });
 
-      // Fetch the newly created user profile
-      await fetchUserProfile(userId);
-    } catch (error) {
-      console.error('Error creating user profile:', error);
+        if (profileError) {
+          console.error('❌ DEBUG: Failed to create user profile:', profileError);
+          return { error: 'Failed to create user profile' };
+        }
+
+        return {};
+      } else {
+        console.error('❌ DEBUG: Signup incomplete:', result.status);
+        return { error: 'Signup incomplete' };
+      }
+    } catch (error: any) {
+      console.error('❌ DEBUG: Signup error:', error);
+      return { error: error.message || 'Registration failed' };
     }
   };
 
   const signIn = async (email: string, password: string) => {
     try {
-      const { error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
+      if (!clerkSignIn) throw new Error('SignIn not initialized');
+
+      const result = await clerkSignIn.create({
+        identifier: email,
+        password
       });
 
-      if (error) throw error;
-      return {};
-    } catch (error: any) {
-      return { error: error.message };
-    }
-  };
-
-  const signUp = async (email: string, password: string, name: string) => {
-    try {
-      // Sign up with email confirmation enabled
-      const { data, error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          emailRedirectTo: undefined, // This ensures OTP is sent instead of magic link
-          data: {
-            name: name, // Store name in user metadata
-          }
-        }
-      });
-
-      if (error) throw error;
-
-      // Create user profile immediately after signup
-      if (data.user) {
-        try {
-          await createUserProfile(data.user.id);
-        } catch (profileError: any) {
-          console.error('Error creating user profile during signup:', profileError);
-          return { error: `Failed to create user profile: ${profileError.message}` };
-        }
+      if (result.status === 'complete') {
+        return {};
+      } else {
+        return { error: 'Sign in incomplete' };
       }
-
-      return {};
     } catch (error: any) {
       return { error: error.message };
     }
@@ -154,9 +141,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   const signOut = async () => {
     try {
-      await supabase.auth.signOut();
-      await storage.clear();
-      
+      await clerkSignOut();
       Toast.show({
         type: 'success',
         text1: 'Signed Out',
@@ -171,25 +156,32 @@ export function AuthProvider({ children }: AuthProviderProps) {
     }
   };
 
-  const updateProfile = async (updates: Partial<User>) => {
+  const updateUserProfile = async (updates: { name?: string; avatar_url?: string }) => {
     try {
-      if (!user) throw new Error('No user logged in');
+      if (!clerkUser) throw new Error('No user logged in');
 
-      const { error } = await supabase
-        .from('users')
-        .update(updates)
-        .eq('id', user.id);
+      if (updates.name) {
+        await clerkUser.update({
+          firstName: updates.name.split(' ')[0],
+          lastName: updates.name.split(' ').slice(1).join(' ')
+        });
+      }
 
-      if (error) throw error;
-
-      const updatedUser = { ...user, ...updates };
-      setUser(updatedUser);
-      await storage.setItem(CACHE_KEYS.USER_PROFILE, updatedUser);
+      if (updates.avatar_url) {
+        await clerkUser.setProfileImage({
+          file: updates.avatar_url
+        });
+      }
 
       return {};
     } catch (error: any) {
       return { error: error.message };
     }
+  };
+
+  const fetchUserProfile = async (userId: string) => {
+    // Clerk handles this automatically through the useUser hook
+    return;
   };
 
   return (
@@ -199,7 +191,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
       signIn,
       signUp,
       signOut,
-      updateProfile,
+      updateUserProfile,
+      fetchUserProfile,
     }}>
       {children}
     </AuthContext.Provider>

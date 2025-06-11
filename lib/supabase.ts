@@ -1,19 +1,221 @@
-import { createClient } from '@supabase/supabase-js';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Database } from '@/types/supabase';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { createClient } from '@supabase/supabase-js';
+import 'react-native-url-polyfill/auto';
 
 // Initialize Supabase client
-const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || '';
-const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '';
+console.log('🔍 DEBUG: Initializing Supabase client');
+console.log('📝 Supabase URL:', process.env.EXPO_PUBLIC_SUPABASE_URL);
+console.log('📝 Supabase Anon Key:', process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY?.slice(0, 10) + '...');
 
-export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
+const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
+const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+
+if (!supabaseUrl || !supabaseAnonKey) {
+  console.error('❌ Missing Supabase configuration:', {
+    hasUrl: !!supabaseUrl,
+    hasKey: !!supabaseAnonKey,
+    urlLength: supabaseUrl?.length,
+    keyLength: supabaseAnonKey?.length
+  });
+  throw new Error('Missing Supabase URL or Anon Key');
+}
+
+// Create the Supabase client with more detailed configuration
+export const supabase = createClient<Database>(
+  supabaseUrl,
+  supabaseAnonKey,
+  {
   auth: {
     storage: AsyncStorage,
     autoRefreshToken: true,
     persistSession: true,
     detectSessionInUrl: false,
-  },
+      storageKey: 'supabase.auth.token',
+      debug: true, // Enable debug mode for auth
+    },
+    db: {
+      schema: 'public',
+    },
+    global: {
+      headers: {
+        'x-application-name': 'campus-market',
+      },
+    },
+  }
+);
+
+// Test the connection and log the configuration
+console.log('🔍 DEBUG: Supabase Configuration:', {
+  url: process.env.EXPO_PUBLIC_SUPABASE_URL,
+  hasAnonKey: !!process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY,
+  anonKeyPrefix: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY?.slice(0, 10) + '...',
 });
+
+// Test the connection
+supabase.auth.getSession().then(({ data, error }) => {
+  if (error) {
+    console.error('❌ DEBUG: Failed to get initial session:', error);
+  } else {
+    console.log('✅ DEBUG: Successfully connected to Supabase');
+    console.log('📝 Session status:', data.session ? 'Active' : 'No session');
+  }
+});
+
+console.log('✅ DEBUG: Supabase client initialized successfully');
+
+// Helper functions with proper type checking
+export const getUserProfile = async (userId: string) => {
+  try {
+    const { data, error } = await supabase
+      .from('users')
+      .select('*')
+      .eq('id', userId)
+      .single();
+    
+    if (error) throw error;
+    return data;
+  } catch (error) {
+    console.error('Error fetching user profile:', error);
+    return null;
+  }
+};
+
+export const updateUserProfile = async (userId: string, updates: Partial<Database['public']['Tables']['users']['Update']>) => {
+  try {
+    const { data, error } = await supabase
+      .from('users')
+      .update(updates)
+      .eq('id', userId)
+      .select()
+      .single();
+    
+    if (error) throw error;
+    return data;
+  } catch (error) {
+    console.error('Error updating user profile:', error);
+    return null;
+  }
+};
+
+export const getSavedProducts = async (userId: string) => {
+  try {
+    const { data, error } = await supabase
+      .from('saved_products')
+      .select('*, product:products(*)')
+      .eq('user_id', userId);
+    
+    if (error) throw error;
+    return data;
+  } catch (error) {
+    console.error('Error fetching saved products:', error);
+    return [];
+  }
+};
+
+export const saveProduct = async (userId: string, productId: string) => {
+  try {
+    const { data, error } = await supabase
+      .from('saved_products')
+      .insert({ user_id: userId, product_id: productId })
+      .select()
+      .single();
+    
+    if (error) throw error;
+    return data;
+  } catch (error) {
+    console.error('Error saving product:', error);
+    return null;
+  }
+};
+
+export const unsaveProduct = async (userId: string, productId: string) => {
+  try {
+    const { error } = await supabase
+      .from('saved_products')
+      .delete()
+      .eq('user_id', userId)
+      .eq('product_id', productId);
+    
+    if (error) throw error;
+    return true;
+  } catch (error) {
+    console.error('Error unsaving product:', error);
+    return false;
+  }
+};
+
+export const getOrders = async (userId: string, role: 'buyer' | 'seller') => {
+  try {
+    const { data, error } = await supabase
+      .rpc('get_user_orders', { user_id: userId, role });
+    
+    if (error) throw error;
+    return data;
+  } catch (error) {
+    console.error('Error fetching orders:', error);
+    return [];
+  }
+};
+
+export const getProductDetails = async (productId: string) => {
+  try {
+    const { data, error } = await supabase
+      .rpc('get_product_details', { product_id: productId });
+    
+    if (error) throw error;
+    return data?.[0] || null;
+  } catch (error) {
+    console.error('Error fetching product details:', error);
+    return null;
+  }
+};
+
+export const updateProductStatus = async (productId: string, isSold: boolean) => {
+  try {
+    const { data, error } = await supabase
+      .from('products')
+      .update({ is_sold: isSold })
+      .eq('id', productId)
+      .select()
+      .single();
+    
+    if (error) throw error;
+    return data;
+  } catch (error) {
+    console.error('Error updating product status:', error);
+    return null;
+  }
+};
+
+export const searchProducts = async (params: {
+  searchQuery?: string
+  categoryFilter?: string
+  minPrice?: number
+  maxPrice?: number
+  conditionFilter?: string
+  sortBy?: string
+  limitCount?: number
+}) => {
+  try {
+    const { data, error } = await supabase
+      .rpc('search_products', {
+        search_query: params.searchQuery,
+        category_filter: params.categoryFilter,
+        min_price: params.minPrice,
+        max_price: params.maxPrice,
+        condition_filter: params.conditionFilter,
+        sort_by: params.sortBy,
+        limit_count: params.limitCount
+      });
+    
+    if (error) throw error;
+    return data;
+  } catch (error) {
+    console.error('Error searching products:', error);
+    return [];
+  }
+};
 
 // Helper function to upload image to storage
 export const uploadImage = async (
@@ -58,23 +260,6 @@ export const deleteImage = async (bucket: string, path: string): Promise<boolean
   }
 };
 
-// Helper function to get user profile
-export const getUserProfile = async (userId: string) => {
-  try {
-    const { data, error } = await supabase
-      .from('users')
-      .select('*')
-      .eq('id', userId)
-      .single();
-
-    if (error) throw error;
-    return data;
-  } catch (error) {
-    console.error('Error getting user profile:', error);
-    return null;
-  }
-};
-
 // Helper function to get user's saved products
 export const getUserSavedProducts = async (userId: string) => {
   try {
@@ -89,7 +274,7 @@ export const getUserSavedProducts = async (userId: string) => {
     if (error) throw error;
     return data.map(item => item.product);
   } catch (error) {
-    console.error('Error getting saved products:', error);
+    console.error('Error fetching saved products:', error);
     return [];
   }
 };
@@ -111,7 +296,7 @@ export const getUserOrders = async (userId: string, role: 'buyer' | 'seller') =>
     if (error) throw error;
     return data;
   } catch (error) {
-    console.error('Error getting user orders:', error);
+    console.error('Error fetching orders:', error);
     return [];
   }
 };
@@ -136,26 +321,6 @@ export const getUserChats = async (userId: string) => {
   } catch (error) {
     console.error('Error getting user chats:', error);
     return [];
-  }
-};
-
-// Helper function to get product details
-export const getProductDetails = async (productId: string) => {
-  try {
-    const { data, error } = await supabase
-      .from('products')
-      .select(`
-        *,
-        seller:users(*)
-      `)
-      .eq('id', productId)
-      .single();
-
-    if (error) throw error;
-    return data;
-  } catch (error) {
-    console.error('Error getting product details:', error);
-    return null;
   }
 };
 
@@ -185,75 +350,6 @@ export const getRelatedProducts = async (productId: string, limit = 6) => {
     return data;
   } catch (error) {
     console.error('Error getting related products:', error);
-    return [];
-  }
-};
-
-// Helper function to search products
-export const searchProducts = async (
-  query?: string,
-  category?: string,
-  minPrice?: number,
-  maxPrice?: number,
-  condition?: string,
-  sortBy = 'relevance',
-  limit = 20
-) => {
-  try {
-    let queryBuilder = supabase
-      .from('products')
-      .select(`
-        *,
-        seller:users(*)
-      `)
-      .eq('is_sold', false);
-
-    if (query) {
-      queryBuilder = queryBuilder.ilike('title', `%${query}%`);
-    }
-
-    if (category) {
-      queryBuilder = queryBuilder.eq('category', category);
-    }
-
-    if (minPrice !== undefined) {
-      queryBuilder = queryBuilder.gte('price', minPrice);
-    }
-
-    if (maxPrice !== undefined) {
-      queryBuilder = queryBuilder.lte('price', maxPrice);
-    }
-
-    if (condition) {
-      queryBuilder = queryBuilder.eq('condition', condition);
-    }
-
-    // Apply sorting
-    switch (sortBy) {
-      case 'price_asc':
-        queryBuilder = queryBuilder.order('price', { ascending: true });
-        break;
-      case 'price_desc':
-        queryBuilder = queryBuilder.order('price', { ascending: false });
-        break;
-      case 'newest':
-        queryBuilder = queryBuilder.order('created_at', { ascending: false });
-        break;
-      case 'popular':
-        queryBuilder = queryBuilder.order('view_count', { ascending: false });
-        break;
-      default:
-        queryBuilder = queryBuilder.order('created_at', { ascending: false });
-    }
-
-    queryBuilder = queryBuilder.limit(limit);
-
-    const { data, error } = await queryBuilder;
-
-    if (error) throw error;
-    return data;
-  } catch (error) {
-    console.error('Error searching products:', error);
     return [];
   }
 };
