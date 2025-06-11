@@ -5,6 +5,7 @@ import { NotificationProvider } from '@/contexts/NotificationContext';
 import { ThemeProvider, useTheme } from '@/contexts/ThemeContext';
 import { useFrameworkReady } from '@/hooks/useFrameworkReady';
 import { ClerkProvider } from '@clerk/clerk-expo';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
@@ -49,7 +50,25 @@ function RootLayoutContent() {
 export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <ClerkProvider publishableKey={Constants.expoConfig?.extra?.clerkPublishableKey}>
+      <ClerkProvider 
+        publishableKey={Constants.expoConfig?.extra?.clerkPublishableKey}
+        tokenCache={{
+          async getToken(key) {
+            try {
+              return await AsyncStorage.getItem(key);
+            } catch (err) {
+              return null;
+            }
+          },
+          async saveToken(key, token) {
+            try {
+              return await AsyncStorage.setItem(key, token);
+            } catch (err) {
+              return;
+            }
+          },
+        }}
+      >
         <ThemeProvider>
           <AuthProvider>
             <NotificationProvider>

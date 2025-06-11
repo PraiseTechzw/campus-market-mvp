@@ -24,50 +24,110 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // Helper function to convert Clerk ID to UUID format
+  const convertToUUID = (clerkId: string) => {
+    // Remove the 'user_' prefix
+    const baseId = clerkId.replace('user_', '');
+    // Create a deterministic UUID v5 using the baseId
+    const uuidv5 = require('uuid').v5;
+    const NAMESPACE = '6ba7b810-9dad-11d1-80b4-00c04fd430c8'; // UUID namespace
+    return uuidv5(baseId, NAMESPACE);
+  };
+
   useEffect(() => {
     const initializeUser = async () => {
       if (isClerkLoaded && isUserLoaded) {
         if (clerkUser) {
           try {
+            const supabaseId = convertToUUID(clerkUser.id);
             // First try to get the user from Supabase
             const { data: supabaseUser, error } = await supabase
               .from('users')
               .select('*')
-              .eq('id', clerkUser.id)
+              .eq('id', supabaseId)
               .single();
 
             if (error) {
               console.error('Error fetching user from Supabase:', error);
+              // If user doesn't exist in Supabase, create them
+              const userData = {
+                id: supabaseId,
+                email: clerkUser.emailAddresses[0]?.emailAddress || '',
+                name: clerkUser.firstName ? `${clerkUser.firstName} ${clerkUser.lastName || ''}`.trim() : '',
+                avatar_url: clerkUser.imageUrl || '',
+                university: null,
+                phone: null,
+                bio: null,
+                is_verified: false,
+                verification_status: 'pending',
+                rating: 0,
+                total_reviews: 0,
+                total_sales: 0,
+                total_earnings: 0,
+                last_active: new Date().toISOString(),
+                is_online: true,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString()
+              };
+
+              const { data: newUser, error: createError } = await supabase
+                .from('users')
+                .insert(userData)
+                .select()
+                .single();
+
+              if (createError) {
+                console.error('Error creating user in Supabase:', createError);
+                return;
+              }
+
+              if (newUser) {
+                const userData: User = {
+                  id: newUser.id,
+                  email: newUser.email,
+                  name: newUser.name,
+                  university: newUser.university || undefined,
+                  avatar_url: newUser.avatar_url || undefined,
+                  phone: newUser.phone || undefined,
+                  bio: newUser.bio || undefined,
+                  is_verified: newUser.is_verified,
+                  verification_status: newUser.verification_status,
+                  rating: newUser.rating || 0,
+                  total_reviews: newUser.total_reviews || 0,
+                  total_sales: newUser.total_sales || 0,
+                  total_earnings: newUser.total_earnings || 0,
+                  last_active: newUser.last_active,
+                  is_online: newUser.is_online,
+                  created_at: newUser.created_at,
+                  updated_at: newUser.updated_at
+                };
+                setUser(userData);
+              }
+            } else if (supabaseUser) {
+              const userData: User = {
+                id: supabaseUser.id,
+                email: supabaseUser.email,
+                name: supabaseUser.name,
+                university: supabaseUser.university || undefined,
+                avatar_url: supabaseUser.avatar_url || undefined,
+                phone: supabaseUser.phone || undefined,
+                bio: supabaseUser.bio || undefined,
+                is_verified: supabaseUser.is_verified,
+                verification_status: supabaseUser.verification_status,
+                rating: supabaseUser.rating || 0,
+                total_reviews: supabaseUser.total_reviews || 0,
+                total_sales: supabaseUser.total_sales || 0,
+                total_earnings: supabaseUser.total_earnings || 0,
+                last_active: supabaseUser.last_active,
+                is_online: supabaseUser.is_online,
+                created_at: supabaseUser.created_at,
+                updated_at: supabaseUser.updated_at
+              };
+              setUser(userData);
             }
-
-            // Convert Clerk user to our User type
-            const userData: User = {
-              id: clerkUser.id,
-              email: clerkUser.emailAddresses[0]?.emailAddress || '',
-              name: supabaseUser?.name || clerkUser.fullName || '',
-              university: supabaseUser?.university,
-              avatar_url: supabaseUser?.avatar_url || clerkUser.imageUrl || undefined,
-              phone: supabaseUser?.phone || clerkUser.phoneNumbers[0]?.phoneNumber || undefined,
-              bio: supabaseUser?.bio,
-              is_verified: clerkUser.emailAddresses[0]?.verification?.status === 'verified',
-              verification_status: clerkUser.emailAddresses[0]?.verification?.status === 'verified' ? 'approved' : 'pending',
-              rating: supabaseUser?.rating || 0,
-              total_reviews: supabaseUser?.total_reviews || 0,
-              total_sales: supabaseUser?.total_sales || 0,
-              total_earnings: supabaseUser?.total_earnings || 0,
-              last_active: new Date().toISOString(),
-              is_online: true,
-              created_at: clerkUser.createdAt?.toISOString() || new Date().toISOString(),
-              updated_at: new Date().toISOString()
-            };
-
-            setUser(userData);
           } catch (error) {
-            console.error('Error initializing user:', error);
-            setUser(null);
+            console.error('Error in user initialization:', error);
           }
-        } else {
-          setUser(null);
         }
         setLoading(false);
       }
@@ -129,7 +189,47 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         password
       });
 
-      if (result.status === 'complete') {
+      if (result.status === 'complete' && result.createdSessionId) {
+        const supabaseId = convertToUUID(result.createdSessionId);
+        // After successful login, ensure user exists in Supabase
+        const { data: supabaseUser, error } = await supabase
+          .from('users')
+          .select('*')
+          .eq('id', supabaseId)
+          .single();
+
+        if (error || !supabaseUser) {
+          // Create user in Supabase if they don't exist
+          const userData = {
+            id: supabaseId,
+            email: email,
+            name: email.split('@')[0], // Use email username as default name
+            university: null,
+            avatar_url: null,
+            phone: null,
+            bio: null,
+            is_verified: false,
+            verification_status: 'pending',
+            rating: 0,
+            total_reviews: 0,
+            total_sales: 0,
+            total_earnings: 0,
+            last_active: new Date().toISOString(),
+            is_online: true,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          };
+
+          const { error: createError } = await supabase
+            .from('users')
+            .insert(userData);
+
+          if (createError) {
+            console.error('Error creating user in Supabase:', createError);
+            return { error: 'Failed to create user profile' };
+          }
+        }
+
         return {};
       } else {
         return { error: 'Sign in incomplete' };

@@ -20,6 +20,7 @@
     "@react-navigation/elements": "^2.3.8",
     "@react-navigation/native": "^7.1.6",
     "@supabase/supabase-js": "^2.50.0",
+    "@types/uuid": "^10.0.0",
     "date-fns": "^4.1.0",
     "expo": "~53.0.10",
     "expo-blur": "~14.1.5",
@@ -50,7 +51,8 @@
     "react-native-toast-message": "^2.3.0",
     "react-native-url-polyfill": "^2.0.0",
     "react-native-web": "~0.20.0",
-    "react-native-webview": "13.13.5"
+    "react-native-webview": "13.13.5",
+    "uuid": "^11.1.0"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",

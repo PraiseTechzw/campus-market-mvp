@@ -1,14 +1,19 @@
 import { useAuth as useAppAuth } from '@/contexts/AuthContext';
 import { useAuth } from '@clerk/clerk-expo';
 import { Redirect, Stack } from 'expo-router';
+import { ActivityIndicator, View } from 'react-native';
 
 export default function AuthLayout() {
-  const { isSignedIn } = useAuth();
-  const { user, loading } = useAppAuth();
+  const { isSignedIn, isLoaded: isClerkLoaded } = useAuth();
+  const { user, loading: isUserLoading } = useAppAuth();
 
-  // If still loading auth state, show nothing
-  if (loading) {
-    return null;
+  // Show loading indicator while auth state is being determined
+  if (!isClerkLoaded || isUserLoading) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+        <ActivityIndicator size="large" />
+      </View>
+    );
   }
 
   // If signed in, handle routing based on user state

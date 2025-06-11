@@ -1,6 +1,7 @@
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
+import { useAuth as useAppAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useSignIn } from '@clerk/clerk-expo';
 import { Ionicons } from '@expo/vector-icons';
@@ -14,6 +15,7 @@ import Toast from 'react-native-toast-message';
 export default function LoginScreen() {
   const { colors } = useTheme();
   const { isLoaded, signIn } = useSignIn();
+  const { user } = useAppAuth();
   const [formData, setFormData] = useState({
     email: '',
     password: '',
@@ -65,7 +67,11 @@ export default function LoginScreen() {
           text1: 'Welcome Back!',
           text2: 'Successfully logged in',
         });
-        router.replace('/(tabs)');
+
+        // Wait for auth state to update
+        setTimeout(() => {
+          router.replace('/(onboarding)/profile-setup');
+        }, 500);
       } else {
         throw new Error('Login incomplete');
       }
