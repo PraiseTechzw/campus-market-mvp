@@ -15,8 +15,6 @@ export interface User {
   is_online: boolean;
   created_at: string;
   updated_at: string;
-  bio?: string;
-  verification_status: string;
 }
 
 export interface Product {

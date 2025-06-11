@@ -24,14 +24,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Helper function to convert Clerk ID to UUID format
-  const convertToUUID = (clerkId: string) => {
-    // Remove the 'user_' prefix
-    const baseId = clerkId.replace('user_', '');
-    // Create a deterministic UUID v5 using the baseId
-    const uuidv5 = require('uuid').v5;
-    const NAMESPACE = '6ba7b810-9dad-11d1-80b4-00c04fd430c8'; // UUID namespace
-    return uuidv5(baseId, NAMESPACE);
+  // Generate a valid UUID from Clerk ID
+  const generateUUID = (clerkId: string) => {
+    // Convert the clerkId to a hex string
+    const hexString = Array.from(clerkId)
+      .map(char => {
+        const code = char.charCodeAt(0);
+        return code.toString(16).padStart(2, '0');
+      })
+      .join('')
+      .slice(0, 32)
+      .padEnd(32, '0');
+    
+    // Format as UUID
+    return `${hexString.slice(0, 8)}-${hexString.slice(8, 12)}-${hexString.slice(12, 16)}-${hexString.slice(16, 20)}-${hexString.slice(20, 32)}`;
   };
 
   useEffect(() => {
@@ -39,19 +45,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (isClerkLoaded && isUserLoaded) {
         if (clerkUser) {
           try {
-            const supabaseId = convertToUUID(clerkUser.id);
+            const userId = generateUUID(clerkUser.id);
+            console.log('Generated UUID:', userId); // Debug log
             // First try to get the user from Supabase
             const { data: supabaseUser, error } = await supabase
               .from('users')
               .select('*')
-              .eq('id', supabaseId)
+              .eq('id', userId)
               .single();
 
             if (error) {
               console.error('Error fetching user from Supabase:', error);
               // If user doesn't exist in Supabase, create them
               const userData = {
-                id: supabaseId,
+                id: userId,
                 email: clerkUser.emailAddresses[0]?.emailAddress || '',
                 name: clerkUser.firstName ? `${clerkUser.firstName} ${clerkUser.lastName || ''}`.trim() : '',
                 avatar_url: clerkUser.imageUrl || '',
@@ -190,18 +197,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
 
       if (result.status === 'complete' && result.createdSessionId) {
-        const supabaseId = convertToUUID(result.createdSessionId);
+        const userId = generateUUID(result.createdSessionId);
+        console.log('Generated UUID for sign in:', userId); // Debug log
         // After successful login, ensure user exists in Supabase
         const { data: supabaseUser, error } = await supabase
           .from('users')
           .select('*')
-          .eq('id', supabaseId)
+          .eq('id', userId)
           .single();
 
         if (error || !supabaseUser) {
           // Create user in Supabase if they don't exist
           const userData = {
-            id: supabaseId,
+            id: userId,
             email: email,
             name: email.split('@')[0], // Use email username as default name
             university: null,
