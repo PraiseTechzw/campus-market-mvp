@@ -32,7 +32,7 @@ export const supabase = createClient<Database>(
     persistSession: true,
     detectSessionInUrl: false,
       storageKey: 'supabase.auth.token',
-      debug: true, // Enable debug mode for auth
+      debug: false, // Enable debug mode for auth
     },
     db: {
       schema: 'public',
@@ -44,6 +44,22 @@ export const supabase = createClient<Database>(
     },
   }
 );
+
+// Add a listener for auth state changes to debug session persistence
+supabase.auth.onAuthStateChange((event, session) => {
+  console.log('🔑 DEBUG: Supabase Auth State Change Event:', event);
+  console.log('📝 DEBUG: Supabase Auth State Change Session:', session ? 'Active' : 'No Session');
+  if (event === 'SIGNED_IN' || event === 'SIGNED_OUT' || event === 'TOKEN_REFRESHED') {
+    // Re-check session status after a known event
+    supabase.auth.getSession().then(({ data, error }) => {
+      if (error) {
+        console.error('❌ DEBUG: Error getting session after auth state change:', error);
+      } else {
+        console.log('✅ DEBUG: Session status (after event):', data.session ? 'Active' : 'No session');
+      }
+    });
+  }
+});
 
 // Test the connection and log the configuration
 console.log('🔍 DEBUG: Supabase Configuration:', {
@@ -357,12 +373,25 @@ export const getRelatedProducts = async (productId: string, limit = 6) => {
 // Helper function to increment product view count
 export const incrementViewCount = async (productId: string) => {
   try {
-    const { data, error } = await supabase
+    // Fetch the current view count
+    const { data: currentProduct, error: fetchError } = await supabase
       .from('products')
-      .update({ view_count: supabase.rpc('increment', { row_id: productId, table_name: 'products', column_name: 'view_count' }) })
+      .select('view_count')
+      .eq('id', productId)
+      .single();
+
+    if (fetchError) throw fetchError;
+    if (!currentProduct) throw new Error('Product not found');
+
+    const newViewCount = (currentProduct.view_count || 0) + 1;
+
+    // Update the view count
+    const { error: updateError } = await supabase
+      .from('products')
+      .update({ view_count: newViewCount })
       .eq('id', productId);
 
-    if (error) throw error;
+    if (updateError) throw updateError;
     return true;
   } catch (error) {
     console.error('Error incrementing view count:', error);
@@ -460,15 +489,12 @@ export const getFlashDeals = async (maxPrice = 100, limit = 8) => {
 export const getCategoryStats = async () => {
   try {
     const { data, error } = await supabase
-      .from('products')
-      .select('category, count(*)')
-      .eq('is_sold', false)
-      .group('category');
+      .rpc('get_category_stats'); // Call the RPC function
 
     if (error) throw error;
-    return data;
+    return data; // This will return an array of { category: string, count: number }
   } catch (error) {
-    console.error('Error getting category stats:', error);
+    console.error('Error fetching category stats:', error);
     return [];
   }
 };
@@ -588,8 +614,7 @@ export const markAllNotificationsRead = async (userId: string) => {
     const { error } = await supabase
       .from('notifications')
       .update({ is_read: true })
-      .eq('user_id', userId)
-      .eq('is_read', false);
+      .eq('recipient_id', userId); // This should update all notifications for the user
 
     if (error) throw error;
     return true;

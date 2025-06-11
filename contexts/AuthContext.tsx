@@ -1,6 +1,6 @@
 import { supabase } from '@/lib/supabase';
 import { User } from '@/types';
-import { useAuth as useClerkAuth, useUser as useClerkUser, useSignIn, useSignUp } from '@clerk/clerk-expo';
+import { useAuth as useClerkAuth, useUser as useClerkUser, useSession, useSignIn, useSignUp } from '@clerk/clerk-expo';
 import { createContext, useContext, useEffect, useState } from 'react';
 import Toast from 'react-native-toast-message';
 
@@ -10,7 +10,7 @@ interface AuthContextType {
   signUp: (email: string, password: string) => Promise<{ error?: string }>;
   signIn: (email: string, password: string) => Promise<{ error?: string }>;
   signOut: () => Promise<void>;
-  updateUserProfile: (updates: { name?: string; avatar_url?: string }) => Promise<{ error?: string }>;
+  updateProfile: (updates: Partial<User>) => Promise<{ error?: string }>;
   fetchUserProfile: (userId: string) => Promise<void>;
 }
 
@@ -18,6 +18,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const { isLoaded: isClerkLoaded, signOut: clerkSignOut } = useClerkAuth();
+  const { session, isLoaded: isSessionLoaded } = useSession();
   const { signUp: clerkSignUp } = useSignUp();
   const { signIn: clerkSignIn } = useSignIn();
   const { user: clerkUser, isLoaded: isUserLoaded } = useClerkUser();
@@ -41,21 +42,62 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   useEffect(() => {
+    // This effect ensures Supabase's session is always in sync with Clerk's session.
+    // Supabase RLS policies rely on the internal session state being set.
+    const setSupabaseSession = async () => {
+      if (isClerkLoaded && isSessionLoaded && session) {
+        try {
+          console.log('🔍 DEBUG: Setting Supabase session from Clerk...');
+          // Get the Clerk JWT for Supabase
+          const authToken = await session.getToken({ template: 'supabase' });
+
+          if (authToken) {
+            await supabase.auth.setSession({
+              access_token: authToken,
+              // Supabase's setSession requires a refresh_token, but Clerk manages its own refresh cycle.
+              // If your Supabase JWT secret matches Clerk's, Supabase will validate the access_token
+              // and handle its own session refreshing. We provide an empty string to satisfy the type.
+              refresh_token: '',
+            });
+            console.log('✅ DEBUG: Supabase session set successfully.');
+      } else {
+            console.warn('⚠️ DEBUG: Clerk authToken not available for Supabase session.');
+          }
+        } catch (error) {
+          console.error('❌ DEBUG: Error setting Supabase session:', error);
+        }
+      } else if (isClerkLoaded && isSessionLoaded && !session) {
+        // If Clerk is loaded but there's no session, clear Supabase session
+        console.log('🔍 DEBUG: Clearing Supabase session (no Clerk session).');
+        await supabase.auth.signOut(); // This also clears the local session
+      }
+    };
+    setSupabaseSession();
+  }, [isClerkLoaded, session, isSessionLoaded]); // Depend on Clerk's loaded state, session, and session loaded state
+
+  useEffect(() => {
     const initializeUser = async () => {
-      if (isClerkLoaded && isUserLoaded) {
+      if (isClerkLoaded && isUserLoaded && isSessionLoaded) {
         if (clerkUser) {
           try {
             const userId = generateUUID(clerkUser.id);
-            console.log('Generated UUID:', userId); // Debug log
+            console.log('🔍 DEBUG: Generated UUID:', userId);
+            
             // First try to get the user from Supabase
             const { data: supabaseUser, error } = await supabase
-              .from('users')
-              .select('*')
-              .eq('id', userId)
-              .single();
+        .from('users')
+        .select('*')
+        .eq('id', userId)
+        .single();
 
-            if (error) {
-              console.error('Error fetching user from Supabase:', error);
+            if (error && error.code !== 'PGRST116') { // PGRST116 means 0 rows, which is handled
+              console.error('❌ DEBUG: Error fetching user from Supabase:', error);
+              // Handle other errors, maybe return or show toast
+          return;
+        }
+
+            if (!supabaseUser) {
+              console.log('🔍 DEBUG: User not found in Supabase, creating new user');
               // If user doesn't exist in Supabase, create them
               const userData = {
                 id: userId,
@@ -84,11 +126,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 .single();
 
               if (createError) {
-                console.error('Error creating user in Supabase:', createError);
+                console.error('❌ DEBUG: Error creating user in Supabase:', createError);
                 return;
               }
 
               if (newUser) {
+                console.log('✅ DEBUG: Successfully created user in Supabase');
                 const userData: User = {
                   id: newUser.id,
                   email: newUser.email,
@@ -110,7 +153,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 };
                 setUser(userData);
               }
-            } else if (supabaseUser) {
+            } else { // supabaseUser exists
+              console.log('✅ DEBUG: Found existing user in Supabase');
               const userData: User = {
                 id: supabaseUser.id,
                 email: supabaseUser.email,
@@ -132,16 +176,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               };
               setUser(userData);
             }
-          } catch (error) {
-            console.error('Error in user initialization:', error);
+    } catch (error) {
+            console.error('❌ DEBUG: Error in user initialization:', error);
           }
+        } else {
+          // No Clerk user, so clear local user state
+          setUser(null);
         }
-        setLoading(false);
-      }
-    };
+      setLoading(false);
+    }
+  };
 
     initializeUser();
-  }, [isClerkLoaded, isUserLoaded, clerkUser]);
+  }, [isClerkLoaded, isUserLoaded, clerkUser, isSessionLoaded]);
 
   const signUp = async (email: string, password: string) => {
     try {
@@ -169,7 +216,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             verification_status: 'pending',
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString()
-          });
+      });
 
         if (profileError) {
           console.error('❌ DEBUG: Failed to create user profile:', profileError);
@@ -264,25 +311,39 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const updateUserProfile = async (updates: { name?: string; avatar_url?: string }) => {
+  const updateProfile = async (updates: Partial<User>) => {
     try {
       if (!clerkUser) throw new Error('No user logged in');
 
-      if (updates.name) {
-        await clerkUser.update({
-          firstName: updates.name.split(' ')[0],
-          lastName: updates.name.split(' ').slice(1).join(' ')
-        });
+      // Generate UUID from Clerk ID
+      const userId = generateUUID(clerkUser.id);
+      console.log('🔍 DEBUG: Updating profile with:', {
+        userId,
+        updates,
+        clerkId: clerkUser.id
+      });
+
+      // Update Supabase profile
+      const { data, error } = await supabase
+        .from('users')
+        .update({ ...updates, updated_at: new Date().toISOString() })
+        .eq('id', userId)
+        .select()
+        .single();
+
+      if (error) {
+        console.error('❌ DEBUG: Error updating profile in Supabase:', error);
+        throw error;
       }
 
-      if (updates.avatar_url) {
-        await clerkUser.setProfileImage({
-          file: updates.avatar_url
-        });
-      }
+      console.log('✅ DEBUG: Profile updated successfully:', data);
+
+      // Update local state
+      setUser(prev => prev ? { ...prev, ...updates } : null);
 
       return {};
     } catch (error: any) {
+      console.error('❌ DEBUG: Error updating profile:', error);
       return { error: error.message };
     }
   };
@@ -299,7 +360,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       signIn,
       signUp,
       signOut,
-      updateUserProfile,
+      updateProfile,
       fetchUserProfile,
     }}>
       {children}

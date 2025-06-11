@@ -61,9 +61,16 @@ export default function UniversitySetupScreen() {
         // In a real app, you might store student ID for verification
       };
 
+      console.log('🔍 DEBUG: University setup updates:', updates);
+
       const { error } = await updateProfile(updates);
       
-      if (error) throw new Error(error);
+      if (error) {
+        console.error('❌ DEBUG: University setup error:', error);
+        throw new Error(error);
+      }
+
+      console.log('✅ DEBUG: University setup successful');
 
       Toast.show({
         type: 'success',
@@ -73,6 +80,7 @@ export default function UniversitySetupScreen() {
 
       router.push('/(onboarding)/preferences');
     } catch (error: any) {
+      console.error('❌ DEBUG: University setup error:', error);
       Toast.show({
         type: 'error',
         text1: 'Update Failed',

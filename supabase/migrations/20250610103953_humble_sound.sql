@@ -539,7 +539,7 @@ BEGIN
     updated_at = now()
   WHERE 
     chat_id = NEW.chat_id
-    AND user_id = NEW.user_id;
+    AND user_id = NEW.sender_id;
   
   RETURN NEW;
 END;

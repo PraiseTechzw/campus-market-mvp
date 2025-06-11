@@ -117,6 +117,31 @@ export default function CreateScreen() {
         location: user.university as string
       }));
     }
+
+    // Fetch and log all categories
+    const fetchCategories = async () => {
+      console.log('🔍 DEBUG: User for category fetch (from AuthContext):', user);
+      
+      // Verify Supabase's internal session state
+      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+      const { data: userData, error: userError } = await supabase.auth.getUser();
+
+      console.log('🔍 DEBUG: Supabase.auth.getSession():', sessionData?.session ? 'Active' : 'No Session', sessionError);
+      console.log('🔍 DEBUG: Supabase.auth.getUser():', userData?.user ? 'User Found' : 'No User', userError);
+
+      // Expected RLS Policy on 'categories' table: 'CREATE POLICY "Anyone can read categories" ON categories FOR SELECT TO authenticated USING (true);'
+      const { data, error } = await supabase
+        .from('categories')
+        .select('*');
+      
+      if (error) {
+        console.error('❌ DEBUG: Error fetching categories:', error);
+      } else {
+        console.log('📋 DEBUG: Available categories:', data);
+      }
+    };
+
+    fetchCategories();
   }, [user]);
 
   const pickImage = async () => {
@@ -292,6 +317,11 @@ export default function CreateScreen() {
       });
 
       // First, get the category ID
+      console.log('🔍 DEBUG: Fetching category:', formData.category);
+      console.log('🔍 DEBUG: Category type:', typeof formData.category);
+      console.log('🔍 DEBUG: Category length:', formData.category.length);
+      console.log('🔍 DEBUG: Category char codes:', Array.from(formData.category).map(c => c.charCodeAt(0)));
+
       const { data: categoryData, error: categoryError } = await supabase
         .from('categories')
         .select('id')
@@ -299,11 +329,14 @@ export default function CreateScreen() {
         .single();
 
       if (categoryError) {
-        console.error('Error fetching category:', categoryError);
+        console.error('❌ DEBUG: Error fetching category:', categoryError);
         throw new Error('Failed to fetch category information');
       }
 
+      console.log('✅ DEBUG: Category data:', categoryData);
+
       if (!categoryData) {
+        console.error('❌ DEBUG: No category found for:', formData.category);
         throw new Error('Category not found');
       }
 

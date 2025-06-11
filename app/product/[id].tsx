@@ -56,6 +56,7 @@ export default function ProductDetailScreen() {
   const [selectedReason, setSelectedReason] = useState<string | null>(null);
   const [details, setDetails] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [showBuySheet, setShowBuySheet] = useState(false);
 
   useEffect(() => {
     if (id) {
@@ -132,7 +133,7 @@ export default function ProductDetailScreen() {
         .select(
           `
           *,
-          reviewer:users(*)
+          reviewer:users!product_reviews_reviewer_id_fkey(*)
         `
         )
         .eq("seller_id", product.seller_id)
@@ -280,28 +281,7 @@ export default function ProductDetailScreen() {
       return;
     }
 
-    setBuyLoading(true);
-
-    Alert.alert(
-      "Buy Now",
-      `Are you sure you want to buy "${
-        product.title
-      }" for $${product.price.toFixed(2)}?`,
-      [
-        {
-          text: "Cancel",
-          style: "cancel",
-          onPress: () => setBuyLoading(false),
-        },
-        {
-          text: "Buy Now",
-          onPress: () => {
-            setBuyLoading(false);
-            router.push(`/checkout/${product.id}`);
-          },
-        },
-      ]
-    );
+    setShowBuySheet(true);
   };
 
   const handleShare = async () => {
@@ -406,6 +386,8 @@ export default function ProductDetailScreen() {
     }
   };
 
+  const hasImages = product?.images && product.images.length > 0;
+
   const renderImageGallery = () => (
     <View style={styles.imageSection}>
       <ScrollView
@@ -417,7 +399,7 @@ export default function ProductDetailScreen() {
           setCurrentImageIndex(index);
         }}
       >
-        {product?.images.map((image, index) => (
+        {hasImages && product.images!.map((image, index) => (
           <TouchableOpacity
             key={index}
             style={styles.imageContainer}
@@ -434,9 +416,9 @@ export default function ProductDetailScreen() {
         ))}
       </ScrollView>
 
-      {product && product.images.length > 1 && (
+      {hasImages && product.images!.length > 1 && (
         <View style={styles.imageIndicators}>
-          {product.images.map((_, index) => (
+          {product.images!.map((_, index) => (
             <View
               key={index}
               style={[
@@ -480,7 +462,7 @@ export default function ProductDetailScreen() {
 
       <View style={styles.imageCounter}>
         <Text style={[styles.imageCounterText, { color: colors.text }]}>
-          {currentImageIndex + 1} / {product?.images.length || 0}
+          {currentImageIndex + 1} / {hasImages ? product.images!.length : 0}
         </Text>
       </View>
     </View>
@@ -1381,6 +1363,112 @@ export default function ProductDetailScreen() {
             </MotiView>
           </View>
         </Modal>
+
+        <Modal
+          visible={showBuySheet}
+          animationType="slide"
+          transparent
+          onRequestClose={() => setShowBuySheet(false)}
+        >
+          <View style={[styles.modalOverlay, { backgroundColor: "rgba(0, 0, 0, 0.5)" }]}>
+            <MotiView
+              from={{ translateY: 1000 }}
+              animate={{ translateY: 0 }}
+              exit={{ translateY: 1000 }}
+              transition={{ type: "timing", duration: 300 }}
+              style={[styles.sheet, { backgroundColor: colors.surface }]}
+            >
+              <View style={[styles.sheetHeader, { borderBottomColor: colors.border }]}>
+                <Text style={[styles.sheetTitle, { color: colors.text }]}>
+                  Confirm Purchase
+                </Text>
+                <TouchableOpacity
+                  onPress={() => setShowBuySheet(false)}
+                  style={styles.closeButton}
+                >
+                  <Ionicons name="close" size={24} color={colors.text} />
+                </TouchableOpacity>
+              </View>
+
+              <ScrollView style={styles.sheetContent}>
+                <View style={styles.buyConfirmation}>
+                  <View style={styles.buyProductInfo}>
+                    {product?.images && product.images.length > 0 && (
+                      <Image
+                        source={{ uri: product.images[0] }}
+                        style={styles.buyProductImage}
+                        resizeMode="cover"
+                      />
+                    )}
+                    <View style={styles.buyProductDetails}>
+                      <Text style={[styles.buyProductTitle, { color: colors.text }]}>
+                        {product?.title}
+                      </Text>
+                      <Text style={[styles.buyProductPrice, { color: colors.primary }]}>
+                        ${product?.price.toFixed(2)}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.buySummary}>
+                    <View style={styles.summaryItem}>
+                      <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>
+                        Item Price
+                      </Text>
+                      <Text style={[styles.summaryValue, { color: colors.text }]}>
+                        ${product.price.toFixed(2)}
+                      </Text>
+                    </View>
+                    <View style={styles.summaryItem}>
+                      <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>
+                        Platform Fee
+                      </Text>
+                      <Text style={[styles.summaryValue, { color: colors.text }]}>
+                        $0.00
+                      </Text>
+                    </View>
+                    <View style={[styles.summaryDivider, { backgroundColor: colors.border }]} />
+                    <View style={styles.summaryItem}>
+                      <Text style={[styles.summaryLabel, { color: colors.text }]}>
+                        Total
+                      </Text>
+                      <Text style={[styles.summaryValue, { color: colors.primary, fontWeight: "700" }]}>
+                        ${product.price.toFixed(2)}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.buyTerms}>
+                    <Ionicons name="information-circle" size={20} color={colors.textSecondary} />
+                    <Text style={[styles.buyTermsText, { color: colors.textSecondary }]}>
+                      By proceeding with the purchase, you agree to our terms of service and confirm that you will meet the seller in person to complete the transaction.
+                    </Text>
+                  </View>
+                </View>
+              </ScrollView>
+
+              <View style={[styles.sheetFooter, { borderTopColor: colors.border }]}>
+                <TouchableOpacity
+                  style={[styles.cancelButton, { borderColor: colors.border }]}
+                  onPress={() => setShowBuySheet(false)}
+                >
+                  <Text style={[styles.cancelButtonText, { color: colors.textSecondary }]}>
+                    Cancel
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.submitButton, { backgroundColor: colors.primary }]}
+                  onPress={() => {
+                    setShowBuySheet(false);
+                    router.push(`/checkout/${product.id}`);
+                  }}
+                >
+                  <Text style={styles.submitButtonText}>Proceed to Checkout</Text>
+                </TouchableOpacity>
+              </View>
+            </MotiView>
+          </View>
+        </Modal>
       </View>
     </KeyboardAvoidingView>
   );
@@ -2001,5 +2089,63 @@ const styles = StyleSheet.create({
     padding: 20,
     gap: 12,
     borderTopWidth: 1,
+  },
+  buyConfirmation: {
+    gap: 24,
+  },
+  buyProductInfo: {
+    flexDirection: "row",
+    gap: 16,
+  },
+  buyProductImage: {
+    width: 80,
+    height: 80,
+    borderRadius: 8,
+  },
+  buyProductDetails: {
+    flex: 1,
+    justifyContent: "center",
+  },
+  buyProductTitle: {
+    fontSize: 16,
+    fontWeight: "600",
+    marginBottom: 8,
+  },
+  buyProductPrice: {
+    fontSize: 18,
+    fontWeight: "700",
+  },
+  buySummary: {
+    backgroundColor: "#F9FAFB",
+    borderRadius: 12,
+    padding: 16,
+    gap: 12,
+  },
+  summaryItem: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  summaryLabel: {
+    fontSize: 14,
+  },
+  summaryValue: {
+    fontSize: 14,
+  },
+  summaryDivider: {
+    height: 1,
+    marginVertical: 4,
+  },
+  buyTerms: {
+    flexDirection: "row",
+    gap: 12,
+    padding: 16,
+    backgroundColor: "#F9FAFB",
+    borderRadius: 12,
+  },
+  buyTermsText: {
+    flex: 1,
+    fontSize: 12,
+    lineHeight: 16,
   },
 });

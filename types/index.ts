@@ -2,13 +2,15 @@ export interface User {
   id: string;
   email: string;
   name: string;
-  university?: string;
-  avatar_url?: string;
+  university: string | null;
+  avatar_url: string | null;
   is_verified: boolean;
-  phone?: string;
+  verification_status?: string;
+  phone?: string | null;
   location?: string;
-  rating: number;
-  total_reviews: number;
+  bio?: string | null;
+  rating?: number;
+  total_reviews?: number;
   total_sales: number;
   total_earnings: number;
   last_active: string;
@@ -27,7 +29,7 @@ export interface Product {
   images: string[] | null;
   specifications?: Record<string, any>;
   seller_id: string;
-  seller: User;
+  seller?: User;
   is_sold: boolean;
   is_featured: boolean;
   view_count: number;
@@ -115,7 +117,7 @@ export interface Notification {
 export interface Review {
   id: string;
   reviewer_id: string;
-  reviewee_id: string;
+  reviewee_id?: string;
   product_id?: string;
   rating: number;
   comment?: string;

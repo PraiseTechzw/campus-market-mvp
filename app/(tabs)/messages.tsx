@@ -1,15 +1,14 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl, AppState, AppStateStatus } from 'react-native';
-import { useRouter } from 'expo-router';
-import { MotiView } from 'moti';
-import { useAuth } from '@/contexts/AuthContext';
-import { useTheme } from '@/contexts/ThemeContext';
 import { Card } from '@/components/ui/Card';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
+import { useAuth } from '@/contexts/AuthContext';
+import { useTheme } from '@/contexts/ThemeContext';
 import { MessagingService } from '@/lib/messaging';
 import { Chat } from '@/types';
 import { Ionicons } from '@expo/vector-icons';
-import { Image } from 'react-native';
+import { useRouter } from 'expo-router';
+import { MotiView } from 'moti';
+import React, { useEffect, useRef, useState } from 'react';
+import { AppState, AppStateStatus, FlatList, Image, RefreshControl, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 export default function MessagesScreen() {
   const { colors } = useTheme();

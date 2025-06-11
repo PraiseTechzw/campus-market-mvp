@@ -920,7 +920,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- Function to get user profile with stats
+-- Create function to get user profile statistics
 CREATE OR REPLACE FUNCTION get_user_profile(user_id uuid)
 RETURNS TABLE (
   id uuid,
@@ -929,14 +929,17 @@ RETURNS TABLE (
   university text,
   avatar_url text,
   is_verified boolean,
-  rating decimal,
-  total_reviews integer,
-  total_sales integer,
-  total_earnings decimal,
-  active_listings integer,
-  sold_listings integer,
+  rating numeric,
+  total_reviews bigint,
+  total_sales bigint,
+  total_earnings numeric,
+  active_listings bigint,
+  sold_listings bigint,
   joined_days integer
-) AS $$
+) 
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
 BEGIN
   RETURN QUERY
   SELECT 
@@ -946,17 +949,21 @@ BEGIN
     u.university,
     u.avatar_url,
     u.is_verified,
-    u.rating,
-    u.total_reviews,
-    u.total_sales,
-    u.total_earnings,
-    (SELECT COUNT(*) FROM products WHERE seller_id = u.id AND is_sold = false)::integer as active_listings,
-    (SELECT COUNT(*) FROM products WHERE seller_id = u.id AND is_sold = true)::integer as sold_listings,
-    EXTRACT(DAY FROM (now() - u.created_at))::integer as joined_days
+    COALESCE(AVG(pr.rating), 0)::numeric as rating,
+    COUNT(pr.id)::bigint as total_reviews,
+    COUNT(DISTINCT o.id)::bigint as total_sales,
+    COALESCE(SUM(o.total_amount), 0)::numeric as total_earnings,
+    COUNT(DISTINCT CASE WHEN p.is_sold = false THEN p.id END)::bigint as active_listings,
+    COUNT(DISTINCT CASE WHEN p.is_sold = true THEN p.id END)::bigint as sold_listings,
+    EXTRACT(DAY FROM (NOW() - u.created_at))::integer as joined_days
   FROM users u
-  WHERE u.id = user_id;
+  LEFT JOIN product_reviews pr ON pr.seller_id = u.id
+  LEFT JOIN orders o ON o.seller_id = u.id AND o.status = 'delivered'
+  LEFT JOIN products p ON p.seller_id = u.id
+  WHERE u.id = user_id
+  GROUP BY u.id;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$;
 
 -- Function to get user's saved products
 CREATE OR REPLACE FUNCTION get_user_saved_products(user_id uuid)

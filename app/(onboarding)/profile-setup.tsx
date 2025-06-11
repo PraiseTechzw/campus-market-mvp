@@ -93,13 +93,21 @@ export default function ProfileSetupScreen() {
         phone: formData.phone.trim() ? 
           `${selectedCountry?.dialCode || ''} ${formData.phone.trim()}` : 
           undefined,
+        bio: formData.bio.trim() || undefined,
         // In a real app, you'd upload the avatar to storage first
         avatar_url: avatar || undefined,
       };
 
+      console.log('🔍 DEBUG: Profile setup updates:', updates);
+
       const { error } = await updateProfile(updates);
       
-      if (error) throw new Error(error);
+      if (error) {
+        console.error('❌ DEBUG: Profile setup error:', error);
+        throw new Error(error);
+      }
+
+      console.log('✅ DEBUG: Profile setup successful');
 
       Toast.show({
         type: 'success',
@@ -109,6 +117,7 @@ export default function ProfileSetupScreen() {
 
       router.push('/(onboarding)/university-setup');
     } catch (error: any) {
+      console.error('❌ DEBUG: Profile setup error:', error);
       Toast.show({
         type: 'error',
         text1: 'Update Failed',

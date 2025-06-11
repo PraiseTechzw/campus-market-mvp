@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, TextInput } from 'react-native';
 import { useTheme } from '@/contexts/ThemeContext';
-import { CountryPicker, Country, DEFAULT_COUNTRY } from './CountryPicker';
-
+import { Ionicons } from '@expo/vector-icons';
+import React, { useState } from 'react';
+import { Modal, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Country, CountryPicker, DEFAULT_COUNTRY } from './CountryPicker';
 interface PhoneInputProps {
   label?: string;
   placeholder?: string;
@@ -25,10 +25,12 @@ export function PhoneInput({
   const { colors } = useTheme();
   const [selectedCountry, setSelectedCountry] = useState<Country>(DEFAULT_COUNTRY);
   const [isFocused, setIsFocused] = useState(false);
+  const [modalVisible, setModalVisible] = useState(false);
 
   const handleCountrySelect = (country: Country) => {
     setSelectedCountry(country);
     onChangeCountry?.(country);
+    setModalVisible(false);
   };
 
   const formatPhoneNumber = (text: string) => {
@@ -75,11 +77,16 @@ export function PhoneInput({
           borderColor: error ? colors.error : isFocused ? colors.primary : colors.border,
         }
       ]}>
-        <CountryPicker
-          selectedCountry={selectedCountry}
-          onSelectCountry={handleCountrySelect}
-          style={styles.countryPicker}
-        />
+        <TouchableOpacity
+          style={styles.countryButton}
+          onPress={() => setModalVisible(true)}
+        >
+          <Text style={styles.flag}>{selectedCountry.flag}</Text>
+          <Text style={[styles.dialCode, { color: colors.text }]}>
+            {selectedCountry.dialCode}
+          </Text>
+          <Ionicons name="chevron-down" size={16} color={colors.textTertiary} />
+        </TouchableOpacity>
         
         <View style={[styles.separator, { backgroundColor: colors.border }]} />
         
@@ -106,6 +113,33 @@ export function PhoneInput({
       <Text style={[styles.fullNumber, { color: colors.textTertiary }]}>
         Full number: {selectedCountry.dialCode} {value}
       </Text>
+
+      <Modal
+        visible={modalVisible}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setModalVisible(false)}
+      >
+        <View style={[styles.modalContainer, { backgroundColor: colors.background }]}>
+          <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
+            <TouchableOpacity
+              style={styles.closeButton}
+              onPress={() => setModalVisible(false)}
+            >
+              <Ionicons name="close" size={24} color={colors.text} />
+            </TouchableOpacity>
+            <Text style={[styles.modalTitle, { color: colors.text }]}>
+              Select Country
+            </Text>
+            <View style={styles.placeholder} />
+          </View>
+
+          <CountryPicker
+            selectedCountry={selectedCountry}
+            onSelectCountry={handleCountrySelect}
+          />
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -126,10 +160,20 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     overflow: 'hidden',
   },
-  countryPicker: {
-    borderWidth: 0,
-    borderRadius: 0,
-    backgroundColor: 'transparent',
+  countryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    gap: 8,
+    minWidth: 100,
+  },
+  flag: {
+    fontSize: 20,
+  },
+  dialCode: {
+    fontSize: 16,
+    fontWeight: '500',
   },
   separator: {
     width: 1,
@@ -149,5 +193,27 @@ const styles = StyleSheet.create({
   fullNumber: {
     fontSize: 12,
     marginTop: 4,
+  },
+  modalContainer: {
+    flex: 1,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingTop: 60,
+    paddingBottom: 20,
+    borderBottomWidth: 1,
+  },
+  closeButton: {
+    padding: 4,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+  },
+  placeholder: {
+    width: 32,
   },
 });
