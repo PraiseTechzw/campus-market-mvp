@@ -1,7 +1,7 @@
 import { NotificationService } from '@/lib/notifications';
 import { Notification } from '@/types';
 import { useRouter } from 'expo-router';
-import React, { createContext, ReactNode, useContext, useEffect, useState } from 'react';
+import React, { createContext, ReactNode, useContext, useEffect, useRef, useState } from 'react';
 import { Platform } from 'react-native';
 import { useAuth } from './AuthContext';
 
@@ -26,17 +26,23 @@ export function NotificationProvider({ children }: NotificationProviderProps) {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(true);
+  const subscriptionRef = useRef<{ unsubscribe: () => void } | null>(null);
 
-  // Fetch notifications on mount and when user changes
   useEffect(() => {
     if (user) {
       fetchNotifications();
       fetchUnreadCount();
-      const unsubscribe = subscribeToRealTimeNotifications();
-      setupPushNotifications();
+      
+      // Only subscribe if we don't have an active subscription
+      if (!subscriptionRef.current) {
+        subscriptionRef.current = subscribeToRealTimeNotifications();
+      }
       
       return () => {
-        unsubscribe();
+        if (subscriptionRef.current) {
+          subscriptionRef.current.unsubscribe();
+          subscriptionRef.current = null;
+        }
       };
     } else {
       setNotifications([]);
@@ -95,7 +101,7 @@ export function NotificationProvider({ children }: NotificationProviderProps) {
 
   // Subscribe to real-time notifications
   const subscribeToRealTimeNotifications = () => {
-    if (!user) return () => {};
+    if (!user) return { unsubscribe: () => {} };
     
     const channel = NotificationService.subscribeToNotifications(user.id, (notification) => {
       // Add the new notification to the list
@@ -104,9 +110,7 @@ export function NotificationProvider({ children }: NotificationProviderProps) {
       setUnreadCount(prev => prev + 1);
     });
 
-    return () => {
-      channel.unsubscribe();
-    };
+    return channel;
   };
 
   // Fetch notifications

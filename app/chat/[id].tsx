@@ -23,23 +23,20 @@ export default function ChatScreen() {
   const [messageText, setMessageText] = useState('');
   const [sending, setSending] = useState(false);
   const flatListRef = useRef<FlatList>(null);
-  const subscription = useRef<{ unsubscribe: () => void } | null>(null);
 
   useEffect(() => {
     if (id && user) {
       fetchChat();
       fetchMessages();
-      subscribeToMessages();
+      const messageSubscription = subscribeToMessages();
       
       // Mark messages as read when opening the chat
       MessagingService.markMessagesAsRead(id as string, user.id);
+      
+      return () => {
+        messageSubscription();
+      };
     }
-    
-    return () => {
-      if (subscription.current) {
-        subscription.current.unsubscribe();
-      }
-    };
   }, [id, user]);
 
   const fetchChat = async () => {
@@ -75,9 +72,9 @@ export default function ChatScreen() {
   };
 
   const subscribeToMessages = () => {
-    if (!id) return;
+    if (!id) return () => {};
     
-    subscription.current = MessagingService.subscribeToMessages(id as string, (newMessage) => {
+    const channel = MessagingService.subscribeToMessages(id as string, (newMessage) => {
       // Add the new message to the list
       setMessages(prev => {
         // Check if message already exists to prevent duplicates
@@ -108,6 +105,10 @@ export default function ChatScreen() {
         );
       }
     });
+
+    return () => {
+      channel.unsubscribe();
+    };
   };
 
   const handleSendMessage = async () => {

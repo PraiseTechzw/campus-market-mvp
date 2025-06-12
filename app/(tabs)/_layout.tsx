@@ -1,55 +1,42 @@
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
+import { MessagingService } from '@/lib/messaging';
+import { NotificationService } from '@/lib/notifications';
 import { supabase } from '@/lib/supabase';
 import { Ionicons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Tabs } from 'expo-router';
 import { MotiView } from 'moti';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Dimensions, Platform, StyleSheet, Text } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function TabLayout() {
   const { colors, colorScheme } = useTheme();
   const { user } = useAuth();
-  const [unreadMessages, setUnreadMessages] = useState(0);
-  const [unreadNotifications, setUnreadNotifications] = useState(0);
+  const [unreadCounts, setUnreadCounts] = useState({
+    messages: 0,
+    notifications: 0
+  });
+  const messageSubscriptionRef = useRef<{ unsubscribe: () => void } | null>(null);
+  const notificationSubscriptionRef = useRef<{ unsubscribe: () => void } | null>(null);
   const insets = useSafeAreaInsets();
   const { width } = Dimensions.get('window');
 
-  useEffect(() => {
-    if (user) {
-      fetchUnreadCounts();
-      const unsubscribeMessages = subscribeToMessages();
-      const unsubscribeNotifications = subscribeToNotifications();
-      
-      return () => {
-        unsubscribeMessages();
-        unsubscribeNotifications();
-      };
-    }
-  }, [user]);
-
   const fetchUnreadCounts = async () => {
+    if (!user) return;
+    
     try {
-      const { data: messageCount, error: messageError } = await supabase.rpc(
-        'get_unread_message_count',
-        { user_id: user?.id || '' }
-      );
+      const [messageCount, notificationCount] = await Promise.all([
+        MessagingService.getUnreadMessageCount(user.id),
+        NotificationService.getUnreadCount(user.id)
+      ]);
       
-      if (!messageError) {
-        setUnreadMessages(messageCount || 0);
-      }
-
-      const { data: notificationCount, error: notificationError } = await supabase.rpc(
-        'get_unread_notification_count',
-        { user_id: user?.id || '' }
-      );
-      
-      if (!notificationError) {
-        setUnreadNotifications(notificationCount || 0);
-      }
+      setUnreadCounts({
+        messages: messageCount.count || 0,
+        notifications: notificationCount.count || 0
+      });
     } catch (error) {
       console.error('Error fetching unread counts:', error);
     }
@@ -68,9 +55,7 @@ export default function TabLayout() {
       })
       .subscribe();
 
-    return () => {
-      supabase.removeChannel(channel);
-    };
+    return channel;
   };
 
   const subscribeToNotifications = () => {
@@ -86,10 +71,33 @@ export default function TabLayout() {
       })
       .subscribe();
 
-    return () => {
-      supabase.removeChannel(channel);
-    };
+    return channel;
   };
+
+  useEffect(() => {
+    if (user) {
+      fetchUnreadCounts();
+      
+      // Only subscribe if we don't have active subscriptions
+      if (!messageSubscriptionRef.current) {
+        messageSubscriptionRef.current = subscribeToMessages();
+      }
+      if (!notificationSubscriptionRef.current) {
+        notificationSubscriptionRef.current = subscribeToNotifications();
+      }
+
+      return () => {
+        if (messageSubscriptionRef.current) {
+          messageSubscriptionRef.current.unsubscribe();
+          messageSubscriptionRef.current = null;
+        }
+        if (notificationSubscriptionRef.current) {
+          notificationSubscriptionRef.current.unsubscribe();
+          notificationSubscriptionRef.current = null;
+        }
+      };
+    }
+  }, [user]);
 
   const renderTabBarIcon = (name: keyof typeof Ionicons.glyphMap, focused: boolean, badgeCount?: number) => (
     <MotiView
@@ -197,84 +205,62 @@ export default function TabLayout() {
   return (
     <Tabs
       screenOptions={{
-         
-        headerShown: false,
         tabBarStyle: {
-
-          backgroundColor: Platform.OS === 'ios' ? 'transparent' : colors.surface + 'F8',
-          borderTopColor: Platform.OS === 'ios' ? colors.border + '40' : colors.border,
-          borderTopWidth: Platform.OS === 'ios' ? 0.5 : 1,
-          height: tabBarHeight + insets.bottom,
-          paddingBottom: insets.bottom,
-          paddingTop: Platform.OS === 'ios' ? 8 : 12,
-          paddingHorizontal: 8,
-          position: 'absolute',
-          elevation: Platform.OS === 'android' ? 8 : 0,
-          shadowOpacity: Platform.OS === 'ios' ? 0.1 : 0,
-          shadowColor: colors.text,
-          shadowOffset: { width: 0, height: -2 },
-          shadowRadius: 8,
-          width: width,
-          left: 0,
-          right: 0,
+          backgroundColor: colors.background,
+          borderTopColor: colors.border,
+          height: Platform.OS === 'ios' ? 80 + insets.bottom : 60,
+          paddingBottom: Platform.OS === 'ios' ? insets.bottom : 0,
         },
-        tabBarBackground: TabBarBackground,
         tabBarActiveTintColor: colors.primary,
-        tabBarInactiveTintColor: colors.textTertiary,
-        tabBarLabelStyle: {
-          fontSize: Platform.OS === 'ios' ? 11 : 12,
-          fontWeight: Platform.OS === 'ios' ? '600' : '500',
-          marginTop: Platform.OS === 'ios' ? 4 : 6,
-          letterSpacing: 0.1,
-        },
-        tabBarItemStyle: {
-          paddingVertical: Platform.OS === 'ios' ? 8 : 6,
-          paddingHorizontal: 4,
-          borderRadius: 12,
-          marginHorizontal: 2,
-        },
-        tabBarHideOnKeyboard: Platform.OS === 'android',
+        tabBarInactiveTintColor: colors.text,
+        headerShown: false,
       }}
     >
       <Tabs.Screen
         name="index"
         options={{
           title: 'Home',
-          tabBarIcon: ({ focused }) => renderTabBarIcon('home', focused),
-          tabBarAccessibilityLabel: 'Home tab',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="home" size={size} color={color} />
+          ),
         }}
       />
       <Tabs.Screen
         name="search"
         options={{
           title: 'Search',
-          tabBarIcon: ({ focused }) => renderTabBarIcon('search', focused),
-          tabBarAccessibilityLabel: 'Search tab',
-        }}
-      />
-      <Tabs.Screen
-        name="create"
-        options={{
-          title: 'Sell',
-          tabBarIcon: ({ focused }) => renderTabBarIcon('add-circle', focused),
-          tabBarAccessibilityLabel: 'Create listing tab',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="search" size={size} color={color} />
+          ),
         }}
       />
       <Tabs.Screen
         name="messages"
         options={{
           title: 'Messages',
-          tabBarIcon: ({ focused }) => renderTabBarIcon('chatbubbles', focused, unreadMessages),
-          tabBarAccessibilityLabel: `Messages tab${unreadMessages > 0 ? `, ${unreadMessages} unread` : ''}`,
-          tabBarBadge: unreadMessages > 0 ? (unreadMessages > 99 ? '99+' : unreadMessages.toString()) : undefined,
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="chatbubble" size={size} color={color} />
+          ),
+          tabBarBadge: unreadCounts.messages > 0 ? unreadCounts.messages : undefined,
+        }}
+      />
+      <Tabs.Screen
+        name="notifications"
+        options={{
+          title: 'Notifications',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="notifications" size={size} color={color} />
+          ),
+          tabBarBadge: unreadCounts.notifications > 0 ? unreadCounts.notifications : undefined,
         }}
       />
       <Tabs.Screen
         name="profile"
         options={{
           title: 'Profile',
-          tabBarIcon: ({ focused }) => renderTabBarIcon('person', focused),
-          tabBarAccessibilityLabel: 'Profile tab',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="person" size={size} color={color} />
+          ),
         }}
       />
     </Tabs>

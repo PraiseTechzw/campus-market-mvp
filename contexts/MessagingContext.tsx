@@ -1,6 +1,6 @@
 import { MessagingService } from '@/lib/messaging';
 import { Chat } from '@/types';
-import React, { createContext, ReactNode, useContext, useEffect, useState } from 'react';
+import React, { createContext, ReactNode, useContext, useEffect, useRef, useState } from 'react';
 import { useAuth } from './AuthContext';
 
 interface MessagingContextType {
@@ -22,16 +22,24 @@ export function MessagingProvider({ children }: MessagingProviderProps) {
   const [chats, setChats] = useState<Chat[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(true);
+  const subscriptionRef = useRef<{ unsubscribe: () => void } | null>(null);
 
   // Fetch chats on mount and when user changes
   useEffect(() => {
     if (user) {
       fetchChats();
       fetchUnreadCount();
-      const unsubscribe = subscribeToRealTimeChats();
+      
+      // Only subscribe if we don't have an active subscription
+      if (!subscriptionRef.current) {
+        subscriptionRef.current = subscribeToRealTimeChats();
+      }
       
       return () => {
-        unsubscribe();
+        if (subscriptionRef.current) {
+          subscriptionRef.current.unsubscribe();
+          subscriptionRef.current = null;
+        }
       };
     } else {
       setChats([]);
@@ -42,7 +50,7 @@ export function MessagingProvider({ children }: MessagingProviderProps) {
 
   // Subscribe to real-time chat updates
   const subscribeToRealTimeChats = () => {
-    if (!user) return () => {};
+    if (!user) return { unsubscribe: () => {} };
     
     const channel = MessagingService.subscribeToChats(user.id, (chat) => {
       // Update the chat in the list or add it if it doesn't exist
@@ -63,9 +71,7 @@ export function MessagingProvider({ children }: MessagingProviderProps) {
       }
     });
 
-    return () => {
-      channel.unsubscribe();
-    };
+    return channel;
   };
 
   // Fetch chats
