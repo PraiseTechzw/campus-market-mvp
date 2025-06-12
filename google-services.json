@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "995179615459",
+    "project_id": "campus-market-9e4e3",
+    "storage_bucket": "campus-market-9e4e3.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:995179615459:android:fb6af12dd23621eceee1d6",
+        "android_client_info": {
+          "package_name": "co.zw.compus_market.campus_market"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBd32XKKLoSV_zkHzOZkHh01OJUfU314aA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:995179615459:android:fb1ba897b39be094eee1d6",
+        "android_client_info": {
+          "package_name": "com.praisetech.campus"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBd32XKKLoSV_zkHzOZkHh01OJUfU314aA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

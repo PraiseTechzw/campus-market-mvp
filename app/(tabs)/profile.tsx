@@ -24,6 +24,21 @@ interface ProfileStats {
   unreadNotifications: number;
 }
 
+interface MenuItem {
+  icon: string;
+  title: string;
+  subtitle: string;
+  onPress: () => void;
+  badge?: string;
+  badgeColor?: string;
+  rightComponent?: React.ReactNode;
+}
+
+interface VerificationStatus {
+  is_verified: boolean;
+  profile_complete: boolean;
+}
+
 export default function ProfileScreen() {
   const { colors, theme, setTheme } = useTheme();
   const { user, signOut, updateProfile } = useAuth();
@@ -44,10 +59,7 @@ export default function ProfileScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
-  const [verificationStatus, setVerificationStatus] = useState<{
-    is_verified: boolean;
-    profile_complete: boolean;
-  }>({
+  const [verificationStatus, setVerificationStatus] = useState<VerificationStatus>({
     is_verified: false,
     profile_complete: false,
   });
@@ -61,15 +73,21 @@ export default function ProfileScreen() {
   }, [user]);
 
   const fetchVerificationStatus = async () => {
+    if (!user?.id) return;
+    
     try {
-      const { data, error } = await supabase.rpc('get_user_verification_status', {
-        p_user_id: user?.id
-      });
+      const { data, error } = await supabase
+        .from('users')
+        .select('is_verified')
+        .eq('id', user.id)
+        .single();
+
       if (error) throw error;
-      if (data && Array.isArray(data) && data.length > 0) {
+      
+      if (data) {
         setVerificationStatus({
-          is_verified: data[0].is_verified,
-          profile_complete: data[0].profile_complete
+          is_verified: data.is_verified || false,
+          profile_complete: true // This will be updated when we add the profile_complete column
         });
       }
     } catch (error) {
@@ -78,11 +96,13 @@ export default function ProfileScreen() {
   };
 
   const fetchUserPreferences = async () => {
+    if (!user?.id) return;
+    
     try {
       const { data, error } = await supabase
         .from('user_preferences')
         .select('notifications_enabled')
-        .eq('user_id', user?.id)
+        .eq('user_id', user.id)
         .single();
 
       if (error && error.code !== 'PGRST116') throw error;
@@ -123,10 +143,24 @@ export default function ProfileScreen() {
 
       if (ordersError) throw ordersError;
 
+      // Fetch reviews and rating
+      const { data: reviews, error: reviewsError } = await supabase
+        .from('product_reviews')
+        .select('rating')
+        .eq('seller_id', user.id);
+
+      if (reviewsError) throw reviewsError;
+
+      // Calculate average rating and total reviews
+      const totalReviews = reviews?.length || 0;
+      const averageRating = totalReviews > 0
+        ? reviews.reduce((sum, review) => sum + review.rating, 0) / totalReviews
+        : 0;
+
       // Fetch unread message count
       const { data: unreadMessages, error: messagesError } = await supabase.rpc(
         'get_unread_message_count',
-        { p_user_id: user.id }
+        { user_id: user.id }
       );
       
       if (messagesError) throw messagesError;
@@ -151,8 +185,8 @@ export default function ProfileScreen() {
         savedProducts: savedProducts?.length || 0,
         totalOrders: orders?.length || 0,
         totalEarnings,
-        averageRating: 4.8, // Mock data - would come from reviews table
-        totalReviews: 24, // Mock data - would come from reviews table
+        averageRating,
+        totalReviews,
         joinedDaysAgo,
         unreadMessages: unreadMessages || 0,
         unreadNotifications: unreadNotifications || 0,
@@ -194,13 +228,14 @@ export default function ProfileScreen() {
   };
 
   const toggleNotifications = async (enabled: boolean) => {
+    if (!user?.id) return;
+    
     setNotificationsEnabled(enabled);
-    // In a real app, you'd update user preferences in the database
     try {
       const { error } = await supabase
         .from('user_preferences')
         .upsert({
-          user_id: user?.id,
+          user_id: user.id,
           notifications_enabled: enabled,
           push_notifications: enabled,
         });
@@ -368,41 +403,83 @@ export default function ProfileScreen() {
               style={styles.userInfo}
               onPress={() => router.push('/profile/edit')}
             >
-              <View style={styles.avatarContainer}>
-                {user.avatar_url ? (
-                  <Image source={{ uri: user.avatar_url }} style={styles.avatar} />
-                ) : (
-                  <View style={[styles.avatar, { backgroundColor: colors.primary }]}>
-                    <Ionicons name="person" size={32} color="#FFFFFF" />
+              <View style={styles.avatarSection}>
+                <View style={styles.avatarContainer}>
+                  {user.avatar_url ? (
+                    <Image source={{ uri: user.avatar_url }} style={styles.avatar} />
+                  ) : (
+                    <View style={[styles.avatar, { backgroundColor: colors.primary }]}>
+                      <Ionicons name="person" size={32} color="#FFFFFF" />
+                    </View>
+                  )}
+                  <View style={[styles.editBadge, { backgroundColor: colors.primary }]}>
+                    <Ionicons name="create" size={12} color="#FFFFFF" />
                   </View>
-                )}
-                <View style={[styles.editBadge, { backgroundColor: colors.primary }]}>
-                  <Ionicons name="create" size={12} color="#FFFFFF" />
                 </View>
-              </View>
-              <View style={styles.userDetails}>
-                <View style={styles.userHeader}>
-                  <Text style={[styles.userName, { color: colors.text }]}>
-                    {user.name}
-                  </Text>
-                  {verificationStatus.is_verified && (
-                    <View style={[styles.verifiedBadge, { backgroundColor: colors.primary }]}>
+                <View style={styles.verificationStatus}>
+                  {verificationStatus.is_verified ? (
+                    <View style={[styles.verifiedBadge, { backgroundColor: colors.success }]}>
                       <Ionicons name="checkmark" size={12} color="#FFFFFF" />
+                      <Text style={styles.verifiedText}>Verified</Text>
+                    </View>
+                  ) : (
+                    <View style={[styles.verifiedBadge, { backgroundColor: colors.warning }]}>
+                      <Ionicons name="time" size={12} color="#FFFFFF" />
+                      <Text style={styles.verifiedText}>Pending</Text>
                     </View>
                   )}
                 </View>
-                <Text style={[styles.userEmail, { color: colors.textSecondary }]}>
-                  {user.email}
-                </Text>
-                {user.university && (
-                  <Text style={[styles.university, { color: colors.textSecondary }]}>
-                    {user.university}
-                  </Text>
-                )}
-                <Text style={[styles.memberSince, { color: colors.textTertiary }]}>
-                  Member for {stats.joinedDaysAgo} days
-                </Text>
               </View>
+
+              <View style={styles.userDetails}>
+                <Text style={[styles.userName, { color: colors.text }]}>
+                  {user.name}
+                </Text>
+                
+                <View style={styles.infoGrid}>
+                  <View style={styles.infoItem}>
+                    <Ionicons name="mail" size={16} color={colors.textTertiary} />
+                    <Text style={[styles.infoText, { color: colors.textSecondary }]} numberOfLines={1}>
+                      {user.email}
+                    </Text>
+                  </View>
+
+                  {user.university && (
+                    <View style={styles.infoItem}>
+                      <Ionicons name="school" size={16} color={colors.textTertiary} />
+                      <Text style={[styles.infoText, { color: colors.textSecondary }]} numberOfLines={1}>
+                        {user.university}
+                      </Text>
+                    </View>
+                  )}
+
+                  {user.phone && (
+                    <View style={styles.infoItem}>
+                      <Ionicons name="call" size={16} color={colors.textTertiary} />
+                      <Text style={[styles.infoText, { color: colors.textSecondary }]} numberOfLines={1}>
+                        {user.phone}
+                      </Text>
+                    </View>
+                  )}
+
+                  <View style={styles.infoItem}>
+                    <Ionicons name="time" size={16} color={colors.textTertiary} />
+                    <Text style={[styles.infoText, { color: colors.textTertiary }]}>
+                      {stats.joinedDaysAgo} days
+                    </Text>
+                  </View>
+                </View>
+
+                {user.bio && (
+                  <View style={styles.bioSection}>
+                    <Ionicons name="document-text" size={16} color={colors.textTertiary} />
+                    <Text style={[styles.bio, { color: colors.textSecondary }]} numberOfLines={2}>
+                      {user.bio}
+                    </Text>
+                  </View>
+                )}
+              </View>
+
               <Ionicons name="chevron-forward" size={20} color={colors.textTertiary} />
             </TouchableOpacity>
           </Card>
@@ -414,7 +491,7 @@ export default function ProfileScreen() {
               animate={{ opacity: 1, height: 'auto' }}
               transition={{ type: 'timing', duration: 500 }}
             >
-              <Card style={[styles.verificationCard, { borderColor: getVerificationColor() }]}>
+              <Card style={{ ...styles.verificationCard, borderColor: getVerificationColor() }}>
                 <View style={styles.verificationContent}>
                   <View style={[styles.verificationIcon, { backgroundColor: getVerificationColor() }]}>
                     <Ionicons name={getVerificationIcon() as any} size={24} color="#FFFFFF" />
@@ -435,7 +512,7 @@ export default function ProfileScreen() {
                 <Button
                   title={!verificationStatus.is_verified ? "Verify Student Status" : "Complete Verification"}
                   onPress={() => router.push('/profile/verification')}
-                  style={[styles.verificationButton, { backgroundColor: getVerificationColor() }]}
+                  style={{ ...styles.verificationButton, backgroundColor: getVerificationColor() }}
                 />
               </Card>
             </MotiView>
@@ -472,10 +549,10 @@ export default function ProfileScreen() {
                 <Ionicons name="star" size={20} color="#FFFFFF" />
               </View>
               <Text style={[styles.statNumber, { color: colors.text }]}>
-                {stats.averageRating}
+                {stats.averageRating.toFixed(1)}
               </Text>
               <Text style={[styles.statLabel, { color: colors.textSecondary }]}>
-                Rating
+                Rating ({stats.totalReviews})
               </Text>
             </Card>
           </View>
@@ -533,7 +610,7 @@ export default function ProfileScreen() {
                             {item.title}
                           </Text>
                           {item.badge && (
-                            <View style={[styles.badge, { backgroundColor: item.badgeColor || colors.primary }]}>
+                            <View style={[styles.badge, { backgroundColor: (item as MenuItem).badgeColor || colors.primary }]}>
                               <Text style={styles.badgeText}>{item.badge}</Text>
                             </View>
                           )}
@@ -544,7 +621,7 @@ export default function ProfileScreen() {
                       </View>
                     </View>
                     <View style={styles.menuItemRight}>
-                      {item.rightComponent || (
+                      {(item as MenuItem).rightComponent || (
                         <Ionicons name="chevron-forward" size={20} color={colors.textTertiary} />
                       )}
                     </View>
@@ -560,7 +637,7 @@ export default function ProfileScreen() {
               title="Sign Out"
               onPress={handleSignOut}
               variant="outline"
-              style={[styles.signOutButton, { borderColor: colors.error }]}
+              style={{ ...styles.signOutButton, borderColor: colors.error }}
               textStyle={{ color: colors.error }}
             />
           </View>
@@ -596,19 +673,24 @@ const styles = StyleSheet.create({
   },
   userCard: {
     marginBottom: 20,
+    padding: 16,
   },
   userInfo: {
     flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  avatarSection: {
+    marginRight: 16,
     alignItems: 'center',
   },
   avatarContainer: {
     position: 'relative',
-    marginRight: 16,
+    marginBottom: 8,
   },
   avatar: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
+    width: 80,
+    height: 80,
+    borderRadius: 40,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -616,44 +698,67 @@ const styles = StyleSheet.create({
     position: 'absolute',
     bottom: -2,
     right: -2,
-    width: 20,
-    height: 20,
-    borderRadius: 10,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 2,
     borderColor: '#FFFFFF',
   },
-  userDetails: {
-    flex: 1,
-  },
-  userHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 4,
-  },
-  userName: {
-    fontSize: 20,
-    fontWeight: '700',
+  verificationStatus: {
+    marginTop: 4,
   },
   verifiedBadge: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    justifyContent: 'center',
+    flexDirection: 'row',
     alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    gap: 4,
   },
-  userEmail: {
-    fontSize: 14,
-    marginBottom: 2,
-  },
-  university: {
-    fontSize: 14,
-    marginBottom: 2,
-  },
-  memberSince: {
+  verifiedText: {
+    color: '#FFFFFF',
     fontSize: 12,
+    fontWeight: '600',
+  },
+  userDetails: {
+    flex: 1,
+    paddingRight: 8,
+  },
+  userName: {
+    fontSize: 24,
+    fontWeight: '700',
+    marginBottom: 12,
+  },
+  infoGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+    marginBottom: 12,
+  },
+  infoItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flex: 1,
+    minWidth: '45%',
+  },
+  infoText: {
+    fontSize: 14,
+    flex: 1,
+  },
+  bioSection: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    padding: 12,
+    borderRadius: 8,
+  },
+  bio: {
+    fontSize: 14,
+    lineHeight: 20,
+    flex: 1,
   },
   verificationCard: {
     marginBottom: 20,

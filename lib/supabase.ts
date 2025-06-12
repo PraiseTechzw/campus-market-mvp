@@ -571,17 +571,21 @@ export const markMessagesRead = async (chatId: string, userId: string) => {
 // Helper function to get unread message count
 export const getUnreadMessageCount = async (userId: string) => {
   try {
+    // First get the chat IDs
+    const { data: chatIds, error: chatError } = await supabase
+      .from('chats')
+      .select('id')
+      .or(`buyer_id.eq.${userId},seller_id.eq.${userId}`);
+
+    if (chatError) throw chatError;
+
+    // Then get the unread count
     const { data, error, count } = await supabase
       .from('messages')
       .select('id', { count: 'exact' })
       .eq('is_read', false)
       .neq('sender_id', userId)
-      .in('chat_id', 
-        supabase
-          .from('chats')
-          .select('id')
-          .or(`buyer_id.eq.${userId},seller_id.eq.${userId}`)
-      );
+      .in('chat_id', chatIds?.map(chat => chat.id) || []);
 
     if (error) throw error;
     return count || 0;

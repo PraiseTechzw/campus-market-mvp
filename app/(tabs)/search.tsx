@@ -24,6 +24,7 @@ export default function SearchScreen() {
   const [popularSearches] = useState<string[]>([
     'iPhone', 'MacBook', 'Textbooks', 'Furniture', 'Bicycle', 'Camera', 'Headphones', 'Laptop'
   ]);
+  const [isFocused, setIsFocused] = useState(false);
 
   useEffect(() => {
     if (query) {
@@ -104,17 +105,19 @@ export default function SearchScreen() {
           specifications: product.specifications as Record<string, any> || undefined,
           location: product.location || undefined,
           tags: product.tags || [],
-          seller: {
-            ...product.seller,
-            rating_count: product.seller.total_reviews || 0,
-            university: product.seller.university || undefined,
-            avatar_url: product.seller.avatar_url || undefined,
-            phone: product.seller.phone || undefined,
-            rating: product.seller.rating || 0
-          }
+          seller: product.seller
+            ? {
+                ...product.seller,
+                rating_count: product.seller.total_reviews || 0,
+                university: product.seller.university ?? null,
+                avatar_url: product.seller.avatar_url ?? undefined,
+                phone: product.seller.phone ?? undefined,
+                rating: product.seller.rating || 0
+              }
+            : undefined,
         }));
         
-        setProducts(typedProducts);
+        setProducts(typedProducts as Product[]);
       } else {
         setProducts([]);
       }
@@ -191,60 +194,42 @@ export default function SearchScreen() {
                 </View>
               </View>
 
-              <Text style={[styles.productDescription, { color: colors.textSecondary }]} numberOfLines={2}>
-                {item.description}
+              <Text style={[styles.productPrice, { color: colors.primary }]}>
+                ${item.price.toFixed(2)}
               </Text>
 
-              <View style={styles.productMeta}>
-                <Text style={[styles.productPrice, { color: colors.primary }]}>
-                  ${item.price.toFixed(2)}
-                </Text>
-                <View style={styles.metaInfo}>
-                  <View style={styles.metaItem}>
-                    <Ionicons name="eye-outline" size={14} color={colors.textTertiary} />
-                    <Text style={[styles.metaText, { color: colors.textTertiary }]}>
-                      {item.view_count}
-                    </Text>
-                  </View>
-                  {item.location && (
-                    <View style={styles.metaItem}>
-                      <Ionicons name="location-outline" size={14} color={colors.textTertiary} />
-                      <Text style={[styles.metaText, { color: colors.textTertiary }]}>
-                        {item.location}
-                      </Text>
-                    </View>
-                  )}
+              {item.location && (
+                <View style={styles.locationContainer}>
+                  <Ionicons name="location-outline" size={14} color={colors.textTertiary} />
+                  <Text style={[styles.locationText, { color: colors.textTertiary }]} numberOfLines={1}>
+                    {item.location}
+                  </Text>
                 </View>
-              </View>
+              )}
 
-              <View style={styles.sellerInfo}>
-                <View style={styles.sellerLeft}>
-                  <Text style={[styles.sellerName, { color: colors.textSecondary }]}>
+              {item.seller && (
+                <View style={styles.sellerInfo}>
+                  <Text style={[styles.sellerName, { color: colors.textSecondary }]} numberOfLines={1}>
                     by {item.seller.name}
                   </Text>
                   {item.seller.is_verified && (
-                    <View style={[styles.verifiedBadge, { backgroundColor: colors.primary }]}>
+                    <View style={[styles.verifiedBadge, { backgroundColor: colors.primary }]}> 
                       <Ionicons name="checkmark" size={10} color="#FFFFFF" />
                     </View>
                   )}
                 </View>
-                {item.seller.university && (
-                  <Text style={[styles.universityText, { color: colors.textTertiary }]}>
-                    {item.seller.university}
-                  </Text>
-                )}
-              </View>
+              )}
 
               {item.tags && item.tags.length > 0 && (
                 <View style={styles.tagsContainer}>
-                  {item.tags.slice(0, 3).map((tag, index) => (
+                  {item.tags.slice(0, 2).map((tag, index) => (
                     <View key={index} style={[styles.tag, { backgroundColor: colors.surface }]}>
-                      <Text style={[styles.tagText, { color: colors.textSecondary }]}>{tag}</Text>
+                      <Text style={[styles.tagText, { color: colors.textSecondary }]} numberOfLines={1}>{tag}</Text>
                     </View>
                   ))}
-                  {item.tags.length > 3 && (
+                  {item.tags.length > 2 && (
                     <Text style={[styles.moreTags, { color: colors.textTertiary }]}>
-                      +{item.tags.length - 3} more
+                      +{item.tags.length - 2} more
                     </Text>
                   )}
                 </View>
@@ -254,15 +239,6 @@ export default function SearchScreen() {
         </Card>
       </TouchableOpacity>
     </MotiView>
-  );
-
-  const renderSearchChip = (text: string, onPress: () => void) => (
-    <TouchableOpacity
-      style={[styles.searchChip, { backgroundColor: colors.surface, borderColor: colors.border }]}
-      onPress={onPress}
-    >
-      <Text style={[styles.searchChipText, { color: colors.text }]}>{text}</Text>
-    </TouchableOpacity>
   );
 
   return (
@@ -276,15 +252,30 @@ export default function SearchScreen() {
             <Ionicons name="arrow-back" size={24} color={colors.text} />
           </TouchableOpacity>
           
-          <View style={[styles.searchInputContainer, { backgroundColor: colors.background, borderColor: colors.border }]}>
-            <Ionicons name="search" size={20} color={colors.textTertiary} />
+          <View
+            style={[
+              styles.searchInputContainer,
+              { 
+                backgroundColor: colors.background, 
+                borderColor: colors.border,
+                shadowColor: '#000',
+                shadowOpacity: 0.06,
+                shadowRadius: 8,
+                elevation: 2,
+              },
+              isFocused && { borderColor: colors.primary, shadowOpacity: 0.12 }
+            ]}
+          >
+            <Ionicons name="search" size={20} color={colors.textTertiary} style={{ marginRight: 6 }} />
             <TextInput
               style={[styles.searchInput, { color: colors.text }]}
               placeholder="Search products..."
-              placeholderTextColor={colors.textTertiary}
+              placeholderTextColor={colors.textTertiary + '99'}
               value={searchQuery}
               onChangeText={setSearchQuery}
               onSubmitEditing={handleSearchSubmit}
+              onFocus={() => setIsFocused(true)}
+              onBlur={() => setIsFocused(false)}
               autoFocus
             />
             {searchQuery.length > 0 && (
@@ -447,15 +438,25 @@ const styles = StyleSheet.create({
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    gap: 12,
+    borderRadius: 24,
+    borderWidth: 1.5,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    marginLeft: 8,
+    marginRight: 8,
+    backgroundColor: '#fff',
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 2,
+    // transition is not supported in RN, but left for reference
+    // transition: 'border-color 0.2s',
   },
   searchInput: {
     flex: 1,
     fontSize: 16,
+    paddingVertical: 4,
+    backgroundColor: 'transparent',
   },
   filterButton: {
     padding: 12,
@@ -513,16 +514,6 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: 8,
   },
-  searchChip: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-    borderWidth: 1,
-  },
-  searchChipText: {
-    fontSize: 12,
-    fontWeight: '500',
-  },
   emptyState: {
     flex: 1,
     justifyContent: 'center',
@@ -559,45 +550,45 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
-    backgroundColor: '#fff',
     overflow: 'hidden',
   },
   productContent: {
     flexDirection: 'row',
     padding: 12,
+    gap: 12,
   },
   productImage: {
-    width: 100,
-    height: 100,
+    width: 120,
+    height: 120,
     borderRadius: 8,
   },
   productImagePlaceholder: {
-    width: 100,
-    height: 100,
+    width: 120,
+    height: 120,
     borderRadius: 8,
     justifyContent: 'center',
     alignItems: 'center',
   },
   productDetails: {
     flex: 1,
-    marginLeft: 12,
+    gap: 6,
   },
   productHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginBottom: 4,
+    gap: 8,
   },
   productTitle: {
     fontSize: 16,
     fontWeight: '600',
     flex: 1,
-    marginRight: 8,
   },
   conditionBadge: {
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 4,
+    alignSelf: 'flex-start',
   },
   conditionText: {
     color: '#FFFFFF',
@@ -605,47 +596,27 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     textTransform: 'capitalize',
   },
-  productDescription: {
-    fontSize: 14,
-    marginBottom: 8,
-    lineHeight: 18,
-  },
-  productMeta: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
   productPrice: {
     fontSize: 18,
     fontWeight: '700',
   },
-  metaInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  metaItem: {
+  locationContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
   },
-  metaText: {
+  locationText: {
     fontSize: 12,
+    flex: 1,
   },
   sellerInfo: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  sellerLeft: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
   },
   sellerName: {
     fontSize: 12,
+    flex: 1,
   },
   verifiedBadge: {
     width: 14,
@@ -654,14 +625,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  universityText: {
-    fontSize: 12,
-  },
   tagsContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 6,
-    marginTop: 4,
   },
   tag: {
     paddingHorizontal: 8,

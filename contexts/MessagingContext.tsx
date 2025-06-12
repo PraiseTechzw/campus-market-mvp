@@ -1,4 +1,5 @@
 import { MessagingService } from '@/lib/messaging';
+import { supabase } from '@/lib/supabase';
 import { Chat } from '@/types';
 import React, { createContext, ReactNode, useContext, useEffect, useRef, useState } from 'react';
 import { useAuth } from './AuthContext';
@@ -23,6 +24,12 @@ export function MessagingProvider({ children }: MessagingProviderProps) {
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const subscriptionRef = useRef<{ unsubscribe: () => void } | null>(null);
+  const chatsRef = useRef<Chat[]>([]);
+
+  // Update ref when chats change
+  useEffect(() => {
+    chatsRef.current = chats;
+  }, [chats]);
 
   // Fetch chats on mount and when user changes
   useEffect(() => {
@@ -30,9 +37,36 @@ export function MessagingProvider({ children }: MessagingProviderProps) {
       fetchChats();
       fetchUnreadCount();
       
-      // Only subscribe if we don't have an active subscription
+      // Single subscription for all updates
       if (!subscriptionRef.current) {
-        subscriptionRef.current = subscribeToRealTimeChats();
+        subscriptionRef.current = supabase
+          .channel('messaging-updates')
+          .on('postgres_changes', {
+            event: '*',
+            schema: 'public',
+            table: 'messages',
+            filter: `chat_id.in.(${chatsRef.current.map(c => c.id).join(',')})`,
+          }, async (payload) => {
+            // Refresh unread count
+            fetchUnreadCount();
+            
+            // If it's a new message, update the chat
+            if (payload.eventType === 'INSERT') {
+              const { data: chat } = await MessagingService.getChatById(payload.new.chat_id);
+              if (chat) {
+                setChats(prev => {
+                  const index = prev.findIndex(c => c.id === chat.id);
+                  if (index >= 0) {
+                    const newChats = [...prev];
+                    newChats[index] = chat;
+                    return newChats;
+                  }
+                  return [chat, ...prev];
+                });
+              }
+            }
+          })
+          .subscribe();
       }
       
       return () => {
@@ -47,32 +81,6 @@ export function MessagingProvider({ children }: MessagingProviderProps) {
       setLoading(false);
     }
   }, [user]);
-
-  // Subscribe to real-time chat updates
-  const subscribeToRealTimeChats = () => {
-    if (!user) return { unsubscribe: () => {} };
-    
-    const channel = MessagingService.subscribeToChats(user.id, (chat) => {
-      // Update the chat in the list or add it if it doesn't exist
-      setChats(prev => {
-        const index = prev.findIndex(c => c.id === chat.id);
-        if (index >= 0) {
-          const newChats = [...prev];
-          newChats[index] = chat;
-          return newChats;
-        } else {
-          return [chat, ...prev];
-        }
-      });
-      
-      // Update unread count if the message is not from the current user
-      if (chat.last_message_sender_id !== user.id) {
-        fetchUnreadCount();
-      }
-    });
-
-    return channel;
-  };
 
   // Fetch chats
   const fetchChats = async () => {
